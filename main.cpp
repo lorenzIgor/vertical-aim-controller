@@ -9,9 +9,9 @@ int main(int argc, char* argv[])
     ShowWindow(GetConsoleWindow(), 0);
     //std::cout << "Hello, World!" << std::endl;
     int x, y  = 0;
-    int rate = 150;
-    int acc = 5;
-    bool isPaused = false;
+    int rate = 156;
+    int acc = 2;
+       bool isPaused = false;
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         isPaused = (GetKeyState(VK_HOME) & 0x8000) != 0;
