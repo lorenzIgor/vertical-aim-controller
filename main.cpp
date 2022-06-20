@@ -1,17 +1,11 @@
 
 //#define WIN32_LEAN_AND_MEAN
 
-//#include <windows.h>
-#include <windowsx.h>
-#include <cstdio>
-#include <cstdlib>
+#include <windows.h>
 #include <iostream>
 #include <io.h>
-#include <fcntl.h>
 #include <dwmapi.h>
-
 #include <thread>
-
 #include <d3d9.h>
 #include <d3dx9.h>
 
@@ -24,7 +18,7 @@
 #define ARGB_TRANS 0x00000000
 
 int x, y  = 0;
-int rate = 170;
+int rate = 232;
 int acc = 1;
 bool isPaused = false;
 BOOL VK_12_PRESSED = false;
