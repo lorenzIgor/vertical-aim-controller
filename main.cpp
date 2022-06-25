@@ -16,15 +16,28 @@
 #define WS_EX_LAYERED 0x00080000
 #define LWA_ALPHA 0x00000002
 #define ARGB_TRANS 0x00000000
+#define STURMGEWEHR_RATE 166
+#define M1907_RATE 200
+#define STG44_RATE 166
 
 int x, y  = 0;
-int rate = 232;
+int rate = STURMGEWEHR_RATE;
 int acc = 1;
-bool isPaused = false;
+
 BOOL VK_12_PRESSED = false;
 BOOL VK_11_PRESSED = false;
 BOOL bCanTrigger_VK_12 = true;
 BOOL bCanTrigger_VK_11 = true;
+
+BOOL VK_10_PRESSED = false;
+BOOL VK_9_PRESSED = false;
+BOOL bCanTrigger_VK_10 = true;
+BOOL bCanTrigger_VK_9 = true;
+
+BOOL VK_8_PRESSED = false;
+BOOL VK_7_PRESSED = false;
+BOOL bCanTrigger_VK_8 = true;
+BOOL bCanTrigger_VK_7 = true;
 
 LPCSTR wndName = "NVIDIA GeForce Overlay DT";
 LPDIRECT3D9EX d3d;              //D3D Object used to create the window
@@ -102,8 +115,6 @@ HRESULT D3DStartup(HWND hWnd)
     return hr;
 }
 
-
-
 VOID Render(VOID)
 {
     COLORREF color = 0xFF00FFFF;
@@ -140,6 +151,10 @@ void checkInput(void)
 
     VK_12_PRESSED = ((GetKeyState(VK_F12) & 0x8000) != 0);
     VK_11_PRESSED = ((GetKeyState(VK_F11) & 0x8000) != 0);
+    VK_10_PRESSED = ((GetKeyState(VK_F10) & 0x8000) != 0);
+    VK_9_PRESSED = ((GetKeyState(VK_F9) & 0x8000) != 0);
+    VK_8_PRESSED = ((GetKeyState(VK_F8) & 0x8000) != 0);
+    VK_7_PRESSED = ((GetKeyState(VK_F7) & 0x8000) != 0);
 
     if(VK_12_PRESSED && bCanTrigger_VK_12){
         rate += acc;
@@ -153,6 +168,34 @@ void checkInput(void)
         bCanTrigger_VK_11 = false;
     } else if (!VK_11_PRESSED && !bCanTrigger_VK_11){
         bCanTrigger_VK_11 = true;
+    }
+
+    if(VK_10_PRESSED && bCanTrigger_VK_10){
+        rate += (acc * 10);
+        bCanTrigger_VK_10 = false;
+    } else if (!VK_10_PRESSED && !bCanTrigger_VK_10){
+        bCanTrigger_VK_10 = true;
+    }
+
+    if(VK_9_PRESSED && bCanTrigger_VK_9){
+        rate -= (acc * 10);
+        bCanTrigger_VK_9 = false;
+    } else if (!VK_9_PRESSED && !bCanTrigger_VK_9){
+        bCanTrigger_VK_9 = true;
+    }
+
+    if(VK_8_PRESSED && bCanTrigger_VK_8){
+        rate = M1907_RATE;
+        bCanTrigger_VK_8 = false;
+    } else if (!VK_8_PRESSED && !bCanTrigger_VK_8){
+        bCanTrigger_VK_8 = true;
+    }
+
+    if(VK_7_PRESSED && bCanTrigger_VK_7){
+        rate = STURMGEWEHR_RATE;
+        bCanTrigger_VK_7 = false;
+    } else if (!VK_7_PRESSED && !bCanTrigger_VK_7){
+        bCanTrigger_VK_7 = true;
     }
 
     if(GetKeyState(VK_LBUTTON) & 0x8000) {
