@@ -18,7 +18,7 @@
 #define ARGB_TRANS 0x00000000
 #define STURMGEWEHR_RATE 166
 #define M1907_RATE 200
-#define STG44_RATE 166
+#define TYPE2A_RATE 228
 
 int x, y  = 0;
 int rate = STURMGEWEHR_RATE;
@@ -42,9 +42,6 @@ BOOL bCanTrigger_VK_7 = true;
 LPCSTR wndName = "NVIDIA GeForce Overlay DT";
 LPDIRECT3D9EX d3d;              //D3D Object used to create the window
 LPDIRECT3DDEVICE9EX d3ddev;     //D3D Device object used to render shit in the window
-
-int w_Width = 800;              //Initial window width
-int w_Height = 600;             //Initial window height
 
 ID3DXFont *font = nullptr;      //Font used in the window
 HRESULT hr = D3D_OK;
