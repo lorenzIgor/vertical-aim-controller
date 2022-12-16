@@ -1,6 +1,5 @@
 
 //#define WIN32_LEAN_AND_MEAN
-
 #include <windows.h>
 #include <iostream>
 #include <io.h>
@@ -17,7 +16,7 @@
 #define LWA_ALPHA 0x00000002
 #define ARGB_TRANS 0x00000000
 #define STURMGEWEHR_RATE 166
-#define M1907_RATE 200
+#define M1907_RATE 640
 #define TYPE2A_RATE 228
 
 int x, y  = 0;
@@ -123,10 +122,10 @@ VOID Render(VOID)
     //begin render scene
     d3ddev->BeginScene();
 
-    auto result = std::to_string(rate).c_str();
+    auto rateLabel = std::to_string(rate);
 
     //render text in our window
-    DrawStringAt(result, 10, 30, color, font);
+    DrawStringAt(rateLabel.c_str(), 10, 30, color, font);
 
     d3ddev->EndScene();
 
@@ -208,8 +207,8 @@ void checkInput(void)
     }
 }
 
-INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd){
-
+INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
+{
     ShowWindow(GetConsoleWindow(), 0);
     HWND hWnd = nullptr;
     MSG uMsg;
@@ -356,37 +355,3 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     return DefWindowProc(hWnd, message, wParam, lParam);
 
 }
-
-//int main(int argc, char* argv[])
-//{
-//    //system(R"(start C:\/"Program Files (x86)/"\Microsoft\Edge\Application\msedge.exe)");
-//    ShowWindow(GetConsoleWindow(), 0);
-//
-//    int x, y  = 0;
-//    int rate = 170;
-//    int acc = 1;
-//    bool isPaused = false;
-//
-//    while (true) {
-//        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-//        isPaused = (GetKeyState(VK_HOME) & 0x8000) != 0;
-//        rate = (GetKeyState(VK_F12) & 0x8000) != 0 ? rate += acc : rate;
-//        rate = (GetKeyState(VK_F11) & 0x8000) != 0 ? rate -= acc : rate;
-//        if(GetKeyState(VK_END)  & 0x8000 ){
-//            break;
-//        }
-//        if(GetKeyState(VK_LBUTTON) & 0x8000) {
-//            if (!isPaused) {
-//                mouse_event(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
-//                            x,
-//                            y,
-//                            0,
-//                            GetMessageExtraInfo());
-//
-//                y += rate;
-//            }
-//        }
-//    }
-//
-//    return 0;
-//}
