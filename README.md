@@ -1,1 +1,1 @@
-# BF5 Vertical Shoot Controller v1.0
+# Vertical Aim Controller v1.0
