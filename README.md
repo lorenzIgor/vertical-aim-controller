@@ -1,1 +1,1 @@
-# bf5-shoot-controller
+# BF5 Vertical Shoot Controller
