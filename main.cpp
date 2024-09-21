@@ -1,4 +1,3 @@
-
 //#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <iostream>
@@ -15,14 +14,13 @@
 #define WS_EX_LAYERED 0x00080000
 #define LWA_ALPHA 0x00000002
 #define ARGB_TRANS 0x00000000
-#define STURMGEWEHR_RATE 166
-#define M1907_RATE 640
+#define STURMGEWEHR_RATE 192
+#define M1907_RATE 160
 #define TYPE2A_RATE 228
-
 int x, y  = 0;
 int rate = STURMGEWEHR_RATE;
 int acc = 1;
-
+    
 BOOL VK_12_PRESSED = false;
 BOOL VK_11_PRESSED = false;
 BOOL bCanTrigger_VK_12 = true;
