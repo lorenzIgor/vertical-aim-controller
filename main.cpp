@@ -14,13 +14,15 @@
 #define WS_EX_LAYERED 0x00080000
 #define LWA_ALPHA 0x00000002
 #define ARGB_TRANS 0x00000000
-#define STURMGEWEHR_RATE 192
-#define M1907_RATE 160
-#define TYPE2A_RATE 228
+#define F7_WEAPON_RATE 238
+#define F8_WEAPON_RATE 108
+
 int x, y  = 0;
-int rate = STURMGEWEHR_RATE;
+int rate = F7_WEAPON_RATE;
 int acc = 1;
-    
+
+BOOL IS_ACTIVE = FALSE;
+
 BOOL VK_12_PRESSED = false;
 BOOL VK_11_PRESSED = false;
 BOOL bCanTrigger_VK_12 = true;
@@ -123,7 +125,8 @@ VOID Render(VOID)
     auto rateLabel = std::to_string(rate);
 
     //render text in our window
-    DrawStringAt(rateLabel.c_str(), 10, 30, color, font);
+
+    DrawStringAt(IS_ACTIVE ? rateLabel.c_str() : "NONE", 10, 30, color, font);
 
     d3ddev->EndScene();
 
@@ -131,7 +134,7 @@ VOID Render(VOID)
     d3ddev->PresentEx(nullptr, nullptr, nullptr, nullptr, 0);
 }
 
-void D3DShutdown(void)
+void D3DShutdown()
 {
     if(d3ddev != nullptr)
         d3ddev->Release();
@@ -139,9 +142,31 @@ void D3DShutdown(void)
         d3d->Release();
 }
 
-void checkInput(void)
+void setIsActive() {
+    IS_ACTIVE = !IS_ACTIVE;
+}
+
+bool bCanToggleActive = true;
+
+void checkInput()
 {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    bool ctrlPressed = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
+    bool shiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000);
+    bool sPressed = (GetAsyncKeyState('S') & 0x8000);
+
+    if (ctrlPressed && shiftPressed && sPressed) {
+        if (bCanToggleActive) {
+            setIsActive();
+            bCanToggleActive = false;
+        }
+    } else {
+        // Libera o toggle quando a combinação for solta
+        bCanToggleActive = true;
+    }
+
+    if(!IS_ACTIVE) return;
 
     VK_12_PRESSED = ((GetKeyState(VK_F12) & 0x8000) != 0);
     VK_11_PRESSED = ((GetKeyState(VK_F11) & 0x8000) != 0);
@@ -179,21 +204,21 @@ void checkInput(void)
     }
 
     if(VK_8_PRESSED && bCanTrigger_VK_8){
-        rate = M1907_RATE;
+        rate = F8_WEAPON_RATE;
         bCanTrigger_VK_8 = false;
     } else if (!VK_8_PRESSED && !bCanTrigger_VK_8){
         bCanTrigger_VK_8 = true;
     }
 
     if(VK_7_PRESSED && bCanTrigger_VK_7){
-        rate = STURMGEWEHR_RATE;
+        rate = F7_WEAPON_RATE;
         bCanTrigger_VK_7 = false;
     } else if (!VK_7_PRESSED && !bCanTrigger_VK_7){
         bCanTrigger_VK_7 = true;
     }
 
     if(GetKeyState(VK_LBUTTON) & 0x8000) {
-        if ((GetKeyState(VK_HOME) & 0x8000) == 0) {
+        if ((GetKeyState(VK_HOME) & 0x8000) == 0 && (GetKeyState(VK_F2) & 0x8000) == 0) {
             mouse_event(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
                         x,
                         y,
@@ -203,6 +228,8 @@ void checkInput(void)
             y += rate;
         }
     }
+
+
 }
 
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
@@ -246,7 +273,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     //Initialise D3D
     if(SUCCEEDED(D3DStartup(hWnd))){
 
-        D3DXCreateFontA(d3ddev, 20, 10, FW_NORMAL, 0, FALSE,
+        D3DXCreateFontA(d3ddev, 40, 20, FW_NORMAL, 0, FALSE,
                        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                        ANTIALIASED_QUALITY, DEFAULT_PITCH || FF_DONTCARE,
                        TEXT("Arial"), &font);
@@ -274,14 +301,10 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 DispatchMessage(&uMsg);
             }
 
-            if(BF5_hWnd == nullptr)
-                BF5_hWnd = FindWindowA(nullptr, wndName);
 
-            if(BF5_hWnd != nullptr && BF5_pID == 0)
-                GetWindowThreadProcessId(BF5_hWnd, &BF5_pID);
-
-            if(BF5_hWnd != nullptr && BF5_pID != 0)
-                BF5_hProc = OpenProcess(PROCESS_VM_READ, false, BF5_pID);
+            BF5_hWnd = FindWindowA(nullptr, wndName);
+            GetWindowThreadProcessId(BF5_hWnd, &BF5_pID);
+            BF5_hProc = OpenProcess(PROCESS_VM_READ, false, BF5_pID);
 
             if(BF5_hProc != nullptr)
             {
@@ -303,12 +326,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             w_pos.Y = bounding_rect.top;
                         }
                     } else {
-//                        if(bounding_rect.left == 0 && bounding_rect.top == 0)
-//                        {
-//                            //Forcing 1 pixel move because otherwise the window is not resized might be a bug with dx
-//                            MoveWindow(hWnd, bounding_rect.left - 1, bounding_rect.top - 1, client_rect.right, client_rect.bottom, false);
-//                        }
-                        MoveWindow(hWnd, bounding_rect.left, bounding_rect.top, client_rect.right, client_rect.bottom, false);
+                        MoveWindow(hWnd, bounding_rect.left + 3850, bounding_rect.top + 450, 1920, 1080, false);
                     }
 
                     init_ok = true;     //Finally initialised
