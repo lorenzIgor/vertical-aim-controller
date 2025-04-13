@@ -6,6 +6,7 @@
 #include <thread>
 #include <d3d9.h>
 #include <d3dx9.h>
+#include <vector>
 
 #pragma comment(lib, "dwmapi.lib");
 #pragma comment(lib, "d3d9.lib");
@@ -54,6 +55,24 @@ HANDLE BF5_hProc = nullptr;     //Handle the process
 bool init_ok = false;           //Is everything initialised?
 COORD w_pos = {0,0};   //Initial windows position
 COORD w_res = {1920,1080}; //Initial windows resolution
+
+
+struct MonitorInfo {
+    HMONITOR hMonitor;
+    RECT monitorRect;
+};
+
+std::vector<MonitorInfo> monitors;
+
+BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
+    monitors.push_back({ hMonitor, *lprcMonitor });
+    return TRUE;
+}
+
+void EnumerateMonitors() {
+    monitors.clear();
+    EnumDisplayMonitors(nullptr, nullptr, MonitorEnumProc, 0);
+}
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -113,7 +132,7 @@ HRESULT D3DStartup(HWND hWnd)
 
 VOID Render(VOID)
 {
-    COLORREF color = 0xFF00FFFF;
+    COLORREF color = 0xFFFF3939;
 
     if(d3ddev == nullptr) return;
 
@@ -270,13 +289,17 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     _hr = DwmExtendFrameIntoClientArea(hWnd, &windowMargins);
 
+    EnumerateMonitors();
+
+
+
     //Initialise D3D
     if(SUCCEEDED(D3DStartup(hWnd))){
 
-        D3DXCreateFontA(d3ddev, 40, 20, FW_NORMAL, 0, FALSE,
+        D3DXCreateFontA(d3ddev, 80, 40, FW_BOLD, 0, FALSE,
                        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                        ANTIALIASED_QUALITY, DEFAULT_PITCH || FF_DONTCARE,
-                       TEXT("Arial"), &font);
+                       TEXT("Franklin Gothic"), &font);
 
         //Show the window
         ShowWindow(hWnd, SW_SHOWDEFAULT);
@@ -326,7 +349,24 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             w_pos.Y = bounding_rect.top;
                         }
                     } else {
-                        MoveWindow(hWnd, bounding_rect.left + 3850, bounding_rect.top + 450, 1920, 1080, false);
+                        // MoveWindow(hWnd, bounding_rect.left + 3850, bounding_rect.top + 450, 1920, 1080, false);
+
+                        if (monitors.size() >= 2) {
+                            RECT secondMonitor = monitors[0].monitorRect; //Mude aqui o index do segundo monitor!!!
+
+                            MoveWindow(
+                                hWnd,
+                                secondMonitor.left, secondMonitor.top,
+                                secondMonitor.right - secondMonitor.left,
+                                secondMonitor.bottom - secondMonitor.top,
+                                false
+                            );
+                        } else {
+                            // fallback: tela principal
+                            RECT primary = monitors[0].monitorRect;
+                            MoveWindow(hWnd, primary.left, primary.top, primary.right - primary.left, primary.bottom - primary.top, false);
+                        }
+
                     }
 
                     init_ok = true;     //Finally initialised
