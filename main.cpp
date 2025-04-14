@@ -15,8 +15,8 @@
 #define WS_EX_LAYERED 0x00080000
 #define LWA_ALPHA 0x00000002
 #define ARGB_TRANS 0x00000000
-#define F7_WEAPON_RATE 238
-#define F8_WEAPON_RATE 108
+#define F7_WEAPON_RATE 121
+#define F8_WEAPON_RATE 301
 
 int x, y  = 0;
 int rate = F7_WEAPON_RATE;
@@ -165,15 +165,29 @@ void setIsActive() {
     IS_ACTIVE = !IS_ACTIVE;
 }
 
-bool bCanToggleActive = true;
+void setIsActive(BOOL state) {
+    IS_ACTIVE = state;
+}
 
-void checkInput()
-{
+BOOL getActive() {
+    return IS_ACTIVE;
+}
+
+bool bCanToggleActive = true;
+bool bCanToggleExtraGuns = true;
+bool bCanToggleMainGun = true;
+
+bool prevActiveState = false;
+bool bCanTogglePrevActiveState = true;
+
+void checkInput() {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     bool ctrlPressed = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
     bool shiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000);
     bool sPressed = (GetAsyncKeyState('S') & 0x8000);
+    bool sMainGun = (GetAsyncKeyState('1') & 0x8000);
+    bool sExtraGuns = (GetAsyncKeyState('2') & 0x8000) || (GetAsyncKeyState('3') & 0x8000) || (GetAsyncKeyState('4') & 0x8000);
 
     if (ctrlPressed && shiftPressed && sPressed) {
         if (bCanToggleActive) {
@@ -183,6 +197,32 @@ void checkInput()
     } else {
         // Libera o toggle quando a combinação for solta
         bCanToggleActive = true;
+    }
+
+    if (sExtraGuns) {
+        if (bCanToggleExtraGuns) {
+            if(bCanTogglePrevActiveState){
+                prevActiveState = getActive();
+                bCanTogglePrevActiveState = false;
+            }
+            setIsActive(false);
+            bCanToggleExtraGuns = false;
+
+        }
+    } else {
+        // Libera o toggle quando a combinação for solta
+        bCanToggleExtraGuns = true;
+    }
+
+    if (sMainGun) {
+        if (bCanToggleMainGun) {
+            setIsActive(prevActiveState);
+            bCanTogglePrevActiveState = true;
+            bCanToggleMainGun = false;
+        }
+    } else {
+        // Libera o toggle quando a combinação for solta
+        bCanToggleMainGun = true;
     }
 
     if(!IS_ACTIVE) return;
