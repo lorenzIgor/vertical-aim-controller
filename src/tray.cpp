@@ -9,62 +9,41 @@ constexpr wchar_t kClassName[] = L"VerticalAimControllerTray";
 constexpr UINT    kIconId      = 1;
 constexpr UINT    WM_TRAY      = WM_APP + 1;
 
-constexpr UINT kMenuTogglePanel = 100;
-constexpr UINT kMenuQuit        = 101;
+HWND            g_hwnd = nullptr;
+HINSTANCE       g_inst = nullptr;
+NOTIFYICONDATAW g_nid  = {};
+Command         g_pending = Command::None;
+std::wstring    g_tooltip;
 
-HWND         g_hwnd = nullptr;
-HINSTANCE    g_inst = nullptr;
-NOTIFYICONDATAW g_nid = {};
-Command      g_pending = Command::None;
-std::wstring g_tooltip;
-
-void ShowContextMenu() {
-    POINT pt;
-    GetCursorPos(&pt);
-
-    HMENU menu = CreatePopupMenu();
-    if (menu == nullptr) return;
-
-    AppendMenuW(menu, MF_STRING, kMenuTogglePanel, L"Abrir/fechar painel\tINSERT");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kMenuQuit, L"Sair");
-
-    // Sem trazer a janela para frente o menu nao fecha ao clicar fora --
-    // comportamento documentado do TrackPopupMenu.
-    SetForegroundWindow(g_hwnd);
-    TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, pt.x, pt.y, 0, g_hwnd, nullptr);
-    PostMessageW(g_hwnd, WM_NULL, 0, 0);
-
-    DestroyMenu(menu);
-}
-
+// Nao ha menu de contexto aqui, e a ausencia e deliberada.
+//
+// TrackPopupMenu entra num laco modal que CAPTURA O MOUSE. A janela dona
+// precisa ser uma janela que possa ir a primeiro plano de verdade; a daqui e
+// WS_POPUP de tamanho zero e nunca exibida, entao SetForegroundWindow nao
+// surtia efeito, o menu nao recebia o input que o fecharia, e o laco ficava
+// presa segurando a captura.
+//
+// Captura de mouse e global: enquanto uma janela a detem, NENHUMA janela do
+// sistema recebe clique. O sintoma era o desktop inteiro parar de responder ao
+// mouse ate o processo ser morto -- observado, com a captura registrada nesta
+// janela da bandeja.
+//
+// Duas acoes distintas por botao cobrem o mesmo que o menu cobria, sem laco
+// modal e sem captura.
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    switch (msg) {
-        case WM_TRAY:
-            switch (LOWORD(lParam)) {
-                case WM_LBUTTONUP:
-                case WM_LBUTTONDBLCLK:
-                    g_pending = Command::TogglePanel;
-                    return 0;
-                case WM_RBUTTONUP:
-                case WM_CONTEXTMENU:
-                    ShowContextMenu();
-                    return 0;
-                default:
-                    break;
-            }
-            return 0;
-
-        case WM_COMMAND:
-            switch (LOWORD(wParam)) {
-                case kMenuTogglePanel: g_pending = Command::TogglePanel; return 0;
-                case kMenuQuit:        g_pending = Command::Quit;        return 0;
-                default: break;
-            }
-            break;
-
-        default:
-            break;
+    if (msg == WM_TRAY) {
+        switch (LOWORD(lParam)) {
+            case WM_LBUTTONUP:
+            case WM_LBUTTONDBLCLK:
+                g_pending = Command::TogglePanel;
+                break;
+            case WM_RBUTTONUP:
+                g_pending = Command::Quit;
+                break;
+            default:
+                break;
+        }
+        return 0;
     }
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
@@ -81,8 +60,9 @@ bool Init(HINSTANCE hInstance) {
     wc.lpszClassName = kClassName;
     RegisterClassExW(&wc);
 
-    // Janela oculta comum, e nao message-only: TrackPopupMenu precisa de uma
-    // janela que possa ir para primeiro plano, e HWND_MESSAGE nao pode.
+    // Janela oculta, apenas para receber as mensagens do icone. Nao precisa ir
+    // a primeiro plano nem exibir nada: era o menu de contexto que exigia isso,
+    // e ele foi removido.
     g_hwnd = CreateWindowExW(0, kClassName, kClassName, WS_POPUP,
                              0, 0, 0, 0, nullptr, nullptr, hInstance, nullptr);
     if (g_hwnd == nullptr) return false;
@@ -97,7 +77,7 @@ bool Init(HINSTANCE hInstance) {
     if (g_nid.hIcon == nullptr) {
         g_nid.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     }
-    wcscpy_s(g_nid.szTip, L"Vertical Aim Controller");
+    wcscpy_s(g_nid.szTip, L"Vertical Aim Controller\nClique: painel | Direito: sair");
 
     return Shell_NotifyIconW(NIM_ADD, &g_nid) != FALSE;
 }

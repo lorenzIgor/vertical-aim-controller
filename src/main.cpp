@@ -132,7 +132,7 @@ void DrawInteractiveFrame() {
 }
 
 // Devolve true se algo foi alterado pelo usuario nesta passagem.
-bool DrawInteractivePanel(Settings& settings) {
+bool DrawInteractivePanel(Settings& settings, bool& quitRequested) {
     bool changed = false;
 
     ImGui::SetNextWindowPos(ImVec2(10.0f, 110.0f), ImGuiCond_FirstUseEver);
@@ -214,8 +214,12 @@ bool DrawInteractivePanel(Settings& settings) {
 
         ImGui::Separator();
         ImGui::TextWrapped(
-            "INSERT volta ao modo passivo, em que os cliques atravessam o "
-            "overlay. As alteracoes sao gravadas em vac.ini automaticamente.");
+            "INSERT ou ESC fecha o painel. Fora do painel os cliques continuam "
+            "indo para o jogo. As alteracoes vao para vac.ini sozinhas.");
+        ImGui::Spacing();
+        if (ImGui::Button("Sair do programa")) {
+            quitRequested = true;
+        }
     }
     ImGui::End();
 
@@ -264,7 +268,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     // WS_EX_TOOLWINDOW o mantem fora da barra de tarefas e do Alt-Tab.
     tray::Init(hInstance);
     tray::Notify(L"Vertical Aim Controller",
-                 L"Rodando. O overlay aparece quando o Battlefield V abrir.");
+                 L"Rodando. Clique no icone para abrir o painel, "
+                 L"botao direito para sair.");
 
     GameWindowTracker tracker(config::Widen(settings.targetExe),
                               config::Widen(settings.titleFallback));
@@ -316,6 +321,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         if (!running) break;
 
         const ULONGLONG now = GetTickCount64();
+
+        // Rede de seguranca contra captura de mouse presa.
+        //
+        // Enquanto uma janela detem a captura, NENHUMA janela do sistema recebe
+        // clique -- o desktop inteiro para de responder ao mouse ate o processo
+        // morrer. Nada neste programa tem motivo legitimo para capturar o
+        // mouse, entao qualquer captura pendente nesta thread e defeito.
+        //
+        // Fica no laco principal, e nao no render: com o jogo fechado o render
+        // nao roda, e o defeito que originou esta guarda estava na janela da
+        // bandeja, que funciona independente do jogo.
+        if (GetCapture() != nullptr) ReleaseCapture();
 
         if (KeyEdge(VK_INSERT, insertWasDown)) {
             overlay.SetInteractive(!overlay.IsInteractive());
@@ -373,7 +390,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         DrawPassiveHud(settings.hudFontSize);
         if (overlay.IsInteractive()) {
             DrawInteractiveFrame();
-            DrawInteractivePanel(settings);
+            bool quitFromPanel = false;
+            DrawInteractivePanel(settings, quitFromPanel);
+            if (quitFromPanel) running = false;
         }
         overlay.EndFrame();
     }

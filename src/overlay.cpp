@@ -22,8 +22,26 @@ Overlay::~Overlay() {
     Shutdown();
 }
 
+// Mensagens de mouse, incluindo a area nao-cliente.
+bool IsMouseMessage(UINT msg) {
+    return (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) ||
+           (msg >= WM_NCMOUSEMOVE && msg <= WM_NCXBUTTONDBLCLK);
+}
+
 LRESULT CALLBACK Overlay::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) return 1;
+    // O backend do ImGui NAO ve mensagens de mouse.
+    //
+    // Ele chama SetCapture(hwnd) ao receber WM_LBUTTONDOWN e so libera no
+    // WM_LBUTTONUP correspondente. Se a janela voltar a ser click-through no
+    // meio do caminho, o UP nao chega e a captura fica presa neste processo --
+    // e captura de mouse e global: nenhuma outra janela do sistema recebe
+    // clique ate o processo morrer.
+    //
+    // A posicao e os botoes ja sao injetados por FeedMouseFromSystem, entao o
+    // backend nao precisa dessas mensagens para nada.
+    if (!IsMouseMessage(msg)) {
+        if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) return 1;
+    }
 
     switch (msg) {
         case WM_DESTROY:
@@ -346,6 +364,7 @@ void Overlay::EndFrame() {
     // painel. Fora dele o overlay continua click-through e o jogo recebe os
     // cliques normalmente, mesmo com o painel aberto.
     SetClickThrough(!(interactive_ && ImGui::GetIO().WantCaptureMouse));
+
 
     // Limpar com alfa zero e o que torna o fundo realmente transparente: o DWM
     // compoe o resultado premultiplicado por cima da tela.

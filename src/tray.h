@@ -10,7 +10,9 @@
 // visivel com o jogo em execucao. Do ponto de vista de quem clicou no atalho,
 // isso e indistinguivel de nao ter aberto -- e leva a abrir de novo.
 //
-// Tambem e a unica forma de encerrar o programa pela interface.
+// Tambem e a unica forma de encerrar o programa pela interface: clique
+// esquerdo abre o painel, clique direito encerra. Nao ha menu de contexto --
+// ver o comentario sobre TrackPopupMenu em tray.cpp.
 namespace tray {
 
 enum class Command {
