@@ -7,9 +7,39 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg,
                                                              WPARAM wParam, LPARAM lParam);
 
+#include <algorithm>
+
 namespace {
 constexpr wchar_t kWindowClass[] = L"VerticalAimControllerOverlay";
 constexpr wchar_t kWindowTitle[] = L"VerticalAimController";
+
+// A WndProc e estatica e precisa saber o modo atual para decidir se aceita
+// ativacao. Ha exatamente um overlay por processo, entao um estado de arquivo
+// resolve sem exigir GWLP_USERDATA.
+bool g_interactive = false;
+
+// O Windows recusa SetForegroundWindow vindo de um processo que nao recebeu o
+// ultimo evento de entrada -- exatamente o caso de um overlay. Anexar a fila de
+// entrada da thread que esta em primeiro plano contorna a restricao pelo tempo
+// da chamada.
+//
+// Sem isto a troca para o modo interativo falha silenciosamente e recria a
+// zona morta: sem WS_EX_TRANSPARENT o clique nao chega ao jogo, e sem foco o
+// backend Win32 do ImGui nao entrega a posicao do mouse ao painel.
+void ForceForeground(HWND hwnd) {
+    if (hwnd == nullptr || !IsWindow(hwnd)) return;
+
+    const HWND  foreground = GetForegroundWindow();
+    const DWORD otherThread = GetWindowThreadProcessId(foreground, nullptr);
+    const DWORD myThread    = GetCurrentThreadId();
+    const bool  attach      = (otherThread != 0 && otherThread != myThread);
+
+    if (attach) AttachThreadInput(otherThread, myThread, TRUE);
+    SetForegroundWindow(hwnd);
+    SetActiveWindow(hwnd);
+    SetFocus(hwnd);
+    if (attach) AttachThreadInput(otherThread, myThread, FALSE);
+}
 }  // namespace
 
 Overlay::~Overlay() {
@@ -23,9 +53,10 @@ LRESULT CALLBACK Overlay::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
-        // A janela e um overlay: nunca deve roubar foco nem ativacao do jogo.
+        // No modo passivo o overlay nunca deve roubar ativacao do jogo. No modo
+        // interativo precisa aceitar, senao o painel nao recebe cliques.
         case WM_MOUSEACTIVATE:
-            return MA_NOACTIVATE;
+            return g_interactive ? MA_ACTIVATE : MA_NOACTIVATE;
         default:
             break;
     }
@@ -222,21 +253,37 @@ void Overlay::Show(bool visible) {
 }
 
 void Overlay::SetInteractive(bool interactive) {
-    interactive_ = interactive;
+    interactive_  = interactive;
+    g_interactive = interactive;
 
-    // Le o estilo atual e altera so o bit desejado. A versao anterior chamava
-    // SetWindowLong com um valor literal, o que apagava WS_EX_TOPMOST.
+    // Le o estilo atual e altera so os bits desejados. A versao anterior
+    // chamava SetWindowLong com um valor literal, o que apagava WS_EX_TOPMOST.
+    //
+    // TRANSPARENT e NOACTIVATE saem e entram juntos: sem foco o ImGui nao
+    // recebe posicao do mouse, e sem TRANSPARENT o clique tambem nao chega ao
+    // jogo -- as duas coisas juntas produzem uma zona morta que engole tudo
+    // que estiver sob o overlay.
+    const LONG_PTR bits = WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+
     LONG_PTR ex = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
     if (interactive) {
-        ex &= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
+        ex &= ~bits;
     } else {
-        ex |= WS_EX_TRANSPARENT;
+        ex |= bits;
     }
     SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, ex);
 
     // Mudanca de estilo so tem efeito apos SWP_FRAMECHANGED.
     SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+    if (interactive) {
+        ForceForeground(hwnd_);
+    } else if (focusReturn_ != nullptr && IsWindow(focusReturn_)) {
+        // Devolve o foco ao jogo; do contrario ele fica sem foco e a
+        // compensacao permanece bloqueada pela camada de primeiro plano.
+        ForceForeground(focusReturn_);
+    }
 
     if (imguiReady_) {
         ImGuiIO& io = ImGui::GetIO();
@@ -246,6 +293,29 @@ void Overlay::SetInteractive(bool interactive) {
             io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
         }
     }
+}
+
+void Overlay::ApplyUiScale(float scale) {
+    uiScale_ = std::clamp(scale, 1.0f, 4.0f);
+    if (!imguiReady_) return;
+
+    // A fonte embutida do ImGui tem 13 px. Sobre 1920x1080 isso e ilegivel a
+    // distancia de jogo, entao o atlas e reconstruido no tamanho pedido em vez
+    // de apenas esticar a textura, que sairia borrada.
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Clear();
+
+    ImFontConfig cfg;
+    cfg.SizePixels = 13.0f * uiScale_;
+    io.Fonts->AddFontDefault(&cfg);
+    io.Fonts->Build();
+    ImGui_ImplDX11_InvalidateDeviceObjects();  // recria a textura no proximo frame
+
+    // ScaleAllSizes e cumulativo, entao o estilo volta ao padrao antes.
+    ImGuiStyle& style = ImGui::GetStyle();
+    style = ImGuiStyle();
+    ImGui::StyleColorsDark();
+    style.ScaleAllSizes(uiScale_);
 }
 
 bool Overlay::RecreateAfterDeviceLoss() {

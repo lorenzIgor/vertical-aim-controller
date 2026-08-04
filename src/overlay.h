@@ -30,10 +30,25 @@ public:
 
     void Show(bool visible);
 
-    // Passivo: WS_EX_TRANSPARENT ligado, cliques atravessam para o jogo.
-    // Interativo: desligado, o painel ImGui recebe mouse e teclado.
+    // Passivo: WS_EX_TRANSPARENT e WS_EX_NOACTIVATE ligados, cliques
+    // atravessam para o jogo e a janela nunca rouba foco.
+    // Interativo: ambos desligados e a janela vai a primeiro plano.
+    //
+    // Os dois estilos precisam andar juntos. O backend Win32 do ImGui so
+    // alimenta a posicao do mouse quando GetForegroundWindow() e esta janela,
+    // e WS_EX_NOACTIVATE impede exatamente isso -- entao deixar so o
+    // TRANSPARENT sair cria uma zona morta: a janela para de deixar o clique
+    // passar para o jogo, mas o ImGui tambem nao o recebe.
     void SetInteractive(bool interactive);
     bool IsInteractive() const { return interactive_; }
+
+    // Janela para a qual devolver o foco ao sair do modo interativo.
+    void SetFocusReturnWindow(HWND hwnd) { focusReturn_ = hwnd; }
+
+    // Escala da interface. Reconstroi o atlas de fontes, entao nao pode ser
+    // chamada entre BeginFrame e EndFrame.
+    void  ApplyUiScale(float scale);
+    float UiScale() const { return uiScale_; }
 
     // false quando o dispositivo foi perdido e nao foi possivel recriar.
     bool BeginFrame();
@@ -71,11 +86,13 @@ private:
     ComPtr<IDCompositionTarget> dcompTarget_;
     ComPtr<IDCompositionVisual> dcompVisual_;
 
-    int  width_       = 1280;
-    int  height_      = 720;
-    int  posX_        = 0;
-    int  posY_        = 0;
-    bool visible_     = false;
-    bool interactive_ = false;
-    bool imguiReady_  = false;
+    int   width_       = 1280;
+    int   height_      = 720;
+    int   posX_        = 0;
+    int   posY_        = 0;
+    bool  visible_     = false;
+    bool  interactive_ = false;
+    bool  imguiReady_  = false;
+    float uiScale_     = 1.0f;
+    HWND  focusReturn_ = nullptr;
 };

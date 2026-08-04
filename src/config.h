@@ -37,6 +37,10 @@ struct Settings {
     float presetF8   = 335.0f;
 
     float hudFontSize = 42.0f;
+
+    // Escala do painel. A fonte embutida do ImGui tem 13 px, ilegivel sobre
+    // 1920x1080 a distancia de jogo.
+    float uiScale = 2.0f;
 };
 
 namespace config {

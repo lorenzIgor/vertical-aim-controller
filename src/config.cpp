@@ -69,6 +69,7 @@ void Apply(Settings& s, const std::string& key, const std::string& value) {
     if (key == "preset.f7")     { ParseFloat(value, s.presetF7);    return; }
     if (key == "preset.f8")     { ParseFloat(value, s.presetF8);    return; }
     if (key == "hud.font_size") { ParseFloat(value, s.hudFontSize); return; }
+    if (key == "ui.scale")      { ParseFloat(value, s.uiScale);     return; }
     // Chave desconhecida: ignorada de proposito.
 }
 
@@ -153,6 +154,7 @@ bool Save(const Settings& s) {
     file << "preset.f8 = "   << s.presetF8   << "\n\n";
 
     file << "hud.font_size = " << s.hudFontSize << "\n";
+    file << "ui.scale = "      << s.uiScale     << "\n";
 
     return file.good();
 }

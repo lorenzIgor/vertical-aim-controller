@@ -24,6 +24,9 @@ constexpr ULONGLONG kGameGoneGraceMs = 3000;
 // sequencia, e nao ha motivo para escrever em disco a cada uma.
 constexpr ULONGLONG kSaveDebounceMs = 2000;
 
+// Tolerancia antes de abandonar o modo interativo por falta de foco.
+constexpr ULONGLONG kInteractiveFocusGraceMs = 1500;
+
 constexpr ImU32 kAccent = IM_COL32(255, 57, 57, 255);
 constexpr ImU32 kShadow = IM_COL32(0, 0, 0, 180);
 constexpr ImU32 kMuted  = IM_COL32(210, 210, 210, 200);
@@ -119,7 +122,7 @@ void DrawInteractiveFrame() {
     const ImU32 warn = IM_COL32(255, 190, 60, 230);
     dl->AddRect(ImVec2(2.0f, 2.0f), ImVec2(size.x - 2.0f, size.y - 2.0f), warn, 0.0f, 0, 5.0f);
 
-    const char* text = "MODO INTERATIVO - os cliques nao passam para o jogo - INSERT para voltar";
+    const char* text = "MODO INTERATIVO - os cliques nao passam para o jogo - INSERT ou ESC para voltar";
     const ImVec2 extent = font->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, text);
     const ImVec2 pos(size.x * 0.5f - extent.x * 0.5f, 12.0f);
 
@@ -206,6 +209,9 @@ bool DrawInteractivePanel(Settings& settings) {
         if (ImGui::SliderFloat("Tamanho do HUD", &settings.hudFontSize, 16.0f, 96.0f, "%.0f")) {
             changed = true;
         }
+        if (ImGui::SliderFloat("Escala do painel", &settings.uiScale, 1.0f, 4.0f, "%.1fx")) {
+            changed = true;
+        }
 
         ImGui::Separator();
         ImGui::TextWrapped(
@@ -268,12 +274,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     // laco de render e ritmado pelo vsync do monitor.
     input::ApplySettings(settings);
     input::SetOverlayWindow(overlay.Hwnd());
+    overlay.ApplyUiScale(settings.uiScale);
     input::Start();
 
     bool      insertWasDown = false;
+    bool      escapeWasDown = false;
     bool      running       = true;
     ULONGLONG gameGoneSince = 0;
     ULONGLONG dirtySince    = 0;
+    ULONGLONG interactiveUnfocusedSince = 0;
 
     while (running) {
         MSG msg;
@@ -290,6 +299,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         tracker.Update();
         input::SetGameWindow(tracker.Hwnd());
         input::SetEnabled(tracker.Valid());
+        overlay.SetFocusReturnWindow(tracker.Hwnd());
+
+        // Reconstroi o atlas de fontes fora do par BeginFrame/EndFrame.
+        if (settings.uiScale != overlay.UiScale()) {
+            overlay.ApplyUiScale(settings.uiScale);
+        }
 
         switch (tray::PollCommand()) {
             case tray::Command::TogglePanel:
@@ -303,18 +318,42 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         }
         if (!running) break;
 
+        const ULONGLONG now = GetTickCount64();
+
         if (KeyEdge(VK_INSERT, insertWasDown)) {
             overlay.SetInteractive(!overlay.IsInteractive());
+        }
+
+        // Segunda saida do modo interativo. Nele o overlay cobre a tela inteira
+        // e o icone da bandeja fica inacessivel, entao depender de uma unica
+        // tecla para sair e arriscado demais.
+        if (KeyEdge(VK_ESCAPE, escapeWasDown) && overlay.IsInteractive()) {
+            overlay.SetInteractive(false);
+        }
+
+        // Terceira saida, automatica: modo interativo sem foco e uma zona morta
+        // -- o clique nao chega ao jogo nem ao painel. Se a ativacao nao pegou,
+        // ou se o usuario trocou de janela, volta sozinho ao modo passivo em
+        // vez de deixar a tela inteira engolindo cliques.
+        if (overlay.IsInteractive() && GetForegroundWindow() != overlay.Hwnd()) {
+            if (interactiveUnfocusedSince == 0) {
+                interactiveUnfocusedSince = now;
+            } else if (now - interactiveUnfocusedSince > kInteractiveFocusGraceMs) {
+                overlay.SetInteractive(false);
+                interactiveUnfocusedSince = 0;
+            }
+        } else {
+            interactiveUnfocusedSince = 0;
         }
 
         tray::SetTooltip(BuildTooltip(tracker.Valid()));
 
         // Gravacao com atraso, comparando o estado vivo com o ultimo gravado.
         // Pega tanto mudancas do painel quanto das hotkeys.
-        const ULONGLONG now = GetTickCount64();
         Settings live = settings;
         input::ReadInto(live);
-        if (!TunablesEqual(live, saved) || live.hudFontSize != saved.hudFontSize) {
+        if (!TunablesEqual(live, saved) || live.hudFontSize != saved.hudFontSize ||
+            live.uiScale != saved.uiScale) {
             if (dirtySince == 0) dirtySince = now;
             if (now - dirtySince > kSaveDebounceMs) {
                 settings = live;

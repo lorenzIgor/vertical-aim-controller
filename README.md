@@ -69,6 +69,13 @@ cópias enviariam movimento de mouse em paralelo e a compensação sairia dobrad
 | `F11` / `F12` | Ajuste fino: −5 / +5 px/s |
 | `HOME` ou `F2` | Suspende a compensação enquanto segurado |
 | `INSERT` | Alterna entre HUD passivo e painel interativo |
+| `ESC` | Sai do modo interativo (segunda saída) |
+
+No modo interativo o overlay deixa de ser click-through e cobre a janela do jogo
+inteira — os cliques vão para o painel, não para o jogo. Há moldura laranja e
+aviso na tela indicando isso. Três formas de sair, porque ficar preso nesse modo
+engoliria todos os cliques da tela: `INSERT`, `ESC`, ou automaticamente após 1,5 s
+se o overlay perder o foco.
 
 Os atalhos só respondem com o jogo (ou o painel) em primeiro plano. Digitar `2`
 num navegador não altera mais o estado da ferramenta.
@@ -125,6 +132,7 @@ movimento enviado pela ferramenta não seja lido como menu.
 | `step.coarse` | `50` | Passo de `F9`/`F10` |
 | `preset.f7` / `preset.f8` | `250` / `620` | Presets |
 | `hud.font_size` | `42` | Tamanho do número no HUD |
+| `ui.scale` | `2.0` | Escala do painel; a fonte embutida do ImGui tem 13 px |
 
 O programa reescreve o arquivo ao sair, então comentários adicionados à mão se
 perdem.
