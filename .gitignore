@@ -1,3 +1,40 @@
-/cmake*
-/.idea
-/.idea/*
+# --- Build ---
+build/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.sln
+*.vcxproj
+*.vcxproj.*
+
+# --- Dependencias buscadas pelo CMake (FetchContent) ---
+_deps/
+
+# --- Binarios e artefatos de link ---
+*.exe
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.obj
+*.idb
+
+# --- IDEs ---
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+*.sdf
+*.opensdf
+
+# --- Configuracao gerada em runtime, ao lado do executavel ---
+vac.ini
+
+# --- Sistema ---
+Thumbs.db
+desktop.ini
