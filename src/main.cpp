@@ -25,6 +25,9 @@ constexpr ULONGLONG kGameGoneGraceMs = 3000;
 constexpr ULONGLONG kSaveDebounceMs = 2000;
 
 
+// Somente para o rotulo do HUD; o valor real vive em wWinMain.
+bool g_inputDisabled = false;
+
 constexpr ImU32 kAccent = IM_COL32(255, 57, 57, 255);
 constexpr ImU32 kShadow = IM_COL32(0, 0, 0, 180);
 constexpr ImU32 kMuted  = IM_COL32(210, 210, 210, 200);
@@ -107,6 +110,12 @@ void DrawPassiveHud(float fontSize) {
     const float y = 34.0f + fontSize;
     dl->AddText(font, labelSize, ImVec2(12.0f, y + 2.0f), kShadow, input::StatusLabel(status));
     dl->AddText(font, labelSize, ImVec2(10.0f, y), statusColor, input::StatusLabel(status));
+
+    if (g_inputDisabled) {
+        const float y2 = y + labelSize + 4.0f;
+        dl->AddText(font, labelSize, ImVec2(12.0f, y2 + 2.0f), kShadow, "--no-input");
+        dl->AddText(font, labelSize, ImVec2(10.0f, y2), IM_COL32(120, 190, 255, 235), "--no-input");
+    }
 }
 
 // Aviso de que o painel esta aberto.
@@ -228,7 +237,13 @@ bool DrawInteractivePanel(Settings& settings, bool& quitRequested) {
 
 }  // namespace
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR lpCmdLine, int) {
+    // --no-input sobe o overlay sem a thread de compensacao, portanto sem
+    // emitir SendInput algum. Serve para separar defeitos de janela de
+    // defeitos de input sem precisar de dois binarios.
+    const bool inputDisabled =
+        (lpCmdLine != nullptr && wcsstr(lpCmdLine, L"--no-input") != nullptr);
+
     // Instancia unica.
     //
     // Duas copias rodando enviariam SendInput em paralelo e a compensacao
@@ -250,6 +265,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     // Sem isto o Windows escala as coordenadas da janela quando ha monitor com
     // DPI diferente de 100%, e o overlay fica deslocado do jogo.
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
+    g_inputDisabled = inputDisabled;
 
     Settings settings = config::Load();
     Settings saved    = settings;
@@ -279,7 +296,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     input::ApplySettings(settings);
     input::SetOverlayWindow(overlay.Hwnd());
     overlay.ApplyUiScale(settings.uiScale);
-    input::Start();
+    if (!inputDisabled) input::Start();
 
     bool      insertWasDown = false;
     bool      escapeWasDown = false;
@@ -301,7 +318,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
 
         tracker.Update();
         input::SetGameWindow(tracker.Hwnd());
-        input::SetEnabled(tracker.Valid());
+        input::SetEnabled(tracker.Valid() && !inputDisabled);
 
         // Reconstroi o atlas de fontes fora do par BeginFrame/EndFrame.
         if (settings.uiScale != overlay.UiScale()) {
@@ -383,6 +400,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         }
 
         gameGoneSince = 0;
+
+        // O overlay so aparece com o jogo EM FOCO, nao apenas aberto.
+        //
+        // A janela e TOPMOST e cobre toda a area do jogo. Verificando apenas a
+        // existencia do jogo, alternar para outro aplicativo deixava o HUD
+        // desenhado por cima dele -- uma camada vermelha sobre a tela inteira,
+        // que nao passa de ruido fora do jogo e faz o overlay parecer travado.
+        if (GetForegroundWindow() != tracker.Hwnd()) {
+            overlay.Show(false);
+            Sleep(16);
+            continue;
+        }
+
         overlay.SetGeometry(tracker.ClientRectInScreen());
         overlay.Show(true);
 
