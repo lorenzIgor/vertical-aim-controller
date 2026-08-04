@@ -27,7 +27,8 @@ enum class Status {
     Ready,           // tudo liberado, faltando so o gatilho
     NoGame,          // janela do jogo nao encontrada
     NotForeground,   // jogo fora do primeiro plano (camada 1)
-    CursorVisible,   // cursor do sistema visivel (camada 2)
+    MenuDetected,    // cursor solto: o jogo nao esta prendendo no centro
+    CursorVisible,   // cursor do sistema visivel (heuristica antiga)
     SuppressedByKey, // HOME ou F2 segurados
     Inactive,        // desligado neste slot (Ctrl+Shift+S)
 };
@@ -37,6 +38,7 @@ const char* StatusLabel(Status status);
 struct ContextState {
     bool   gameForeground  = false;
     bool   cursorVisible   = false;
+    bool   cursorPinned    = false;  // preso no centro da janela do jogo
     bool   suppressedByKey = false;  // HOME ou F2 segurados
     bool   compensating    = false;
     Status status          = Status::NoGame;
@@ -68,10 +70,21 @@ void SetEnabled(bool enabled);
 void SetRequireForeground(bool value);
 bool RequireForeground();
 
-// Suspende quando o cursor do sistema esta visivel. Durante o gameplay um FPS
-// esconde o cursor; ao abrir menu, mostra. Serve para dispensar o HOME/F2
-// manual -- mas depende do jogo nao desenhar cursor proprio, entao e
-// desligavel.
+// Compensa apenas enquanto o jogo estiver prendendo o cursor no centro da
+// propria janela.
+//
+// E o que o Battlefield V faz durante o gameplay: recentraliza o cursor a cada
+// quadro, porque a mira vem de raw input. No menu ele solta o cursor. Medido
+// nos dois estados: cravado em (960,540) jogando, livre no menu.
+//
+// A decisao tem histerese de 250 ms. Um unico quadro fora do centro nao conta,
+// senao o proprio movimento que enviamos seria lido como menu.
+void SetRequireCursorPinned(bool value);
+bool RequireCursorPinned();
+
+// Heuristica anterior: suspender enquanto o cursor do sistema estiver visivel.
+// Nao serve para o Battlefield V, que mantem o cursor visivel o tempo todo --
+// medido. Mantida desligada para outros jogos.
 void SetSuppressWhenCursorVisible(bool value);
 bool SuppressWhenCursorVisible();
 

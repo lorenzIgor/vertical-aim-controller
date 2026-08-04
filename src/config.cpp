@@ -46,6 +46,10 @@ void Apply(Settings& s, const std::string& key, const std::string& value) {
         ParseBool(value, s.requireForeground);
         return;
     }
+    if (key == "detection.require_cursor_pinned") {
+        ParseBool(value, s.requireCursorPinned);
+        return;
+    }
     if (key == "detection.suppress_when_cursor_visible") {
         ParseBool(value, s.suppressWhenCursorVisible);
         return;
@@ -128,6 +132,11 @@ bool Save(const Settings& s) {
 
     file << "detection.require_foreground = "
          << (s.requireForeground ? 1 : 0) << "\n";
+    file << "# Compensa so enquanto o jogo prende o cursor no centro da janela,\n"
+            "# que e o que ele faz no gameplay e nao faz no menu.\n";
+    file << "detection.require_cursor_pinned = "
+         << (s.requireCursorPinned ? 1 : 0) << "\n";
+    file << "# Heuristica antiga; nao serve para o Battlefield V.\n";
     file << "detection.suppress_when_cursor_visible = "
          << (s.suppressWhenCursorVisible ? 1 : 0) << "\n\n";
 

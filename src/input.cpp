@@ -21,21 +21,31 @@ std::atomic<int>  g_currentSlot{0};
 std::atomic<float> g_ratePerSlot[kSlotCount];
 
 std::atomic<float> g_stepFine{5.0f};
-std::atomic<float> g_stepCoarse{50.0f};
-std::atomic<float> g_presetF7{250.0f};
-std::atomic<float> g_presetF8{620.0f};
+std::atomic<float> g_stepCoarse{25.0f};
+std::atomic<float> g_presetF7{135.0f};
+std::atomic<float> g_presetF8{335.0f};
 
 std::atomic<HWND> g_gameWindow{nullptr};
 std::atomic<HWND> g_overlayWindow{nullptr};
 
 std::atomic<bool> g_requireForeground{true};
+std::atomic<bool> g_requireCursorPinned{true};
 std::atomic<bool> g_suppressWhenCursorVisible{false};
 
 std::atomic<bool>   g_ctxForeground{false};
 std::atomic<bool>   g_ctxCursorVisible{false};
+std::atomic<bool>   g_ctxCursorPinned{false};
 std::atomic<bool>   g_ctxSuppressedByKey{false};
 std::atomic<bool>   g_ctxCompensating{false};
 std::atomic<Status> g_ctxStatus{Status::NoGame};
+
+// Raio em pixels dentro do qual o cursor conta como "no centro".
+constexpr int kCenterTolerancePx = 6;
+
+// Tempo continuo fora do centro necessario para declarar menu. O jogo
+// recentraliza a cada quadro, entao no gameplay isso nunca acumula; o valor so
+// precisa ser maior que um intervalo de quadro com folga.
+constexpr double kMenuHysteresisMs = 250.0;
 
 std::thread g_thread;
 
@@ -102,6 +112,30 @@ bool CursorIsVisible() {
     return (ci.flags & CURSOR_SHOWING) != 0;
 }
 
+// O jogo esta segurando o cursor no centro da propria janela?
+//
+// Durante o gameplay o Battlefield V recentraliza o cursor a cada quadro,
+// porque a mira vem de raw input; no menu ele solta. Isso distingue os dois
+// estados sem depender de visibilidade do cursor -- que neste jogo fica sempre
+// visivel -- nem de ClipCursor, que ele nunca usa.
+bool CursorPinnedToCenter() {
+    const HWND game = g_gameWindow.load();
+    if (game == nullptr) return false;
+
+    RECT client;
+    if (!GetClientRect(game, &client)) return false;
+
+    POINT center{(client.right - client.left) / 2, (client.bottom - client.top) / 2};
+    if (!ClientToScreen(game, &center)) return false;
+
+    POINT cursor;
+    if (!GetCursorPos(&cursor)) return false;
+
+    const int dx = cursor.x - center.x;
+    const int dy = cursor.y - center.y;
+    return (dx * dx + dy * dy) <= (kCenterTolerancePx * kCenterTolerancePx);
+}
+
 // O overlay conta como contexto valido: com o painel aberto o foco e dele.
 bool InGameContext() {
     const HWND fg      = GetForegroundWindow();
@@ -143,9 +177,12 @@ void ThreadMain() {
     bool activePerSlot[kSlotCount] = {};
 
     // Fracao de pixel que sobrou do tick anterior. Sem isto, uma taxa de
-    // 250 px/s com tick de 1 ms daria 0,25 px por tick, truncaria para zero e
+    // 135 px/s com tick de 1 ms daria 0,135 px por tick, truncaria para zero e
     // o mouse nunca sairia do lugar.
     double residual = 0.0;
+
+    // Tempo continuo com o cursor fora do centro da janela do jogo.
+    double offCenterMs = 0.0;
 
     while (g_running.load()) {
         LARGE_INTEGER now;
@@ -160,10 +197,21 @@ void ThreadMain() {
 
         const bool foreground    = InGameContext();
         const bool cursorVisible = CursorIsVisible();
+        const bool cursorPinned  = CursorPinnedToCenter();
         const bool keySuppressed = Down(VK_HOME) || Down(VK_F2);
+
+        // Um quadro solto nao basta: o proprio movimento que enviamos tira o
+        // cursor do centro por alguns milissegundos ate o jogo recentralizar.
+        if (cursorPinned) {
+            offCenterMs = 0.0;
+        } else {
+            offCenterMs += dt * 1000.0;
+        }
+        const bool looksLikeMenu = offCenterMs > kMenuHysteresisMs;
 
         g_ctxForeground.store(foreground);
         g_ctxCursorVisible.store(cursorVisible);
+        g_ctxCursorPinned.store(!looksLikeMenu);
         g_ctxSuppressedByKey.store(keySuppressed);
 
         // Camada 1: fora do jogo, nem as hotkeys valem. Antes, digitar "2" em
@@ -209,9 +257,11 @@ void ThreadMain() {
         // Camada 2: cursor visivel indica menu aberto. Durante o gameplay um
         // FPS esconde o cursor do sistema e usa raw input.
         const bool cursorBlocks = g_suppressWhenCursorVisible.load() && cursorVisible;
+        const bool menuBlocks   = g_requireCursorPinned.load() && looksLikeMenu;
 
         const bool compensate = g_enabled.load() && g_isActive.load() && contextOk &&
-                                !cursorBlocks && !keySuppressed && Down(VK_LBUTTON);
+                                !menuBlocks && !cursorBlocks && !keySuppressed &&
+                                Down(VK_LBUTTON);
 
         g_ctxCompensating.store(compensate);
 
@@ -221,6 +271,7 @@ void ThreadMain() {
         if (!g_enabled.load())          status = Status::NoGame;
         else if (!contextOk)            status = Status::NotForeground;
         else if (!g_isActive.load())    status = Status::Inactive;
+        else if (menuBlocks)            status = Status::MenuDetected;
         else if (cursorBlocks)          status = Status::CursorVisible;
         else if (keySuppressed)         status = Status::SuppressedByKey;
         else if (compensate)            status = Status::Compensating;
@@ -264,6 +315,7 @@ ContextState Context() {
     ContextState s;
     s.gameForeground  = g_ctxForeground.load();
     s.cursorVisible   = g_ctxCursorVisible.load();
+    s.cursorPinned    = g_ctxCursorPinned.load();
     s.suppressedByKey = g_ctxSuppressedByKey.load();
     s.compensating    = g_ctxCompensating.load();
     s.status          = g_ctxStatus.load();
@@ -276,6 +328,7 @@ const char* StatusLabel(Status status) {
         case Status::Ready:           return "PRONTO";
         case Status::NoGame:          return "SEM JOGO";
         case Status::NotForeground:   return "BLOQUEADO: fora de foco";
+        case Status::MenuDetected:    return "BLOQUEADO: menu do jogo";
         case Status::CursorVisible:   return "BLOQUEADO: cursor visivel";
         case Status::SuppressedByKey: return "SUSPENSO: HOME/F2";
         case Status::Inactive:        return "DESLIGADO (Ctrl+Shift+S)";
@@ -289,6 +342,8 @@ void SetOverlayWindow(HWND hwnd) { g_overlayWindow.store(hwnd); }
 
 void SetRequireForeground(bool value)         { g_requireForeground.store(value); }
 bool RequireForeground()                      { return g_requireForeground.load(); }
+void SetRequireCursorPinned(bool value)       { g_requireCursorPinned.store(value); }
+bool RequireCursorPinned()                    { return g_requireCursorPinned.load(); }
 void SetSuppressWhenCursorVisible(bool value) { g_suppressWhenCursorVisible.store(value); }
 bool SuppressWhenCursorVisible()              { return g_suppressWhenCursorVisible.load(); }
 
@@ -302,6 +357,7 @@ void ApplySettings(const Settings& settings) {
     g_presetF7.store(settings.presetF7);
     g_presetF8.store(settings.presetF8);
     g_requireForeground.store(settings.requireForeground);
+    g_requireCursorPinned.store(settings.requireCursorPinned);
     g_suppressWhenCursorVisible.store(settings.suppressWhenCursorVisible);
 }
 
@@ -314,6 +370,7 @@ void ReadInto(Settings& settings) {
     settings.presetF7                  = g_presetF7.load();
     settings.presetF8                  = g_presetF8.load();
     settings.requireForeground         = g_requireForeground.load();
+    settings.requireCursorPinned       = g_requireCursorPinned.load();
     settings.suppressWhenCursorVisible = g_suppressWhenCursorVisible.load();
 }
 

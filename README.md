@@ -94,11 +94,19 @@ Duas camadas evitam que a compensação dispare quando você não está atirando
 **Jogo em primeiro plano** — impede que cliques no navegador, na área de
 trabalho ou em qualquer outra janela arrastem o cursor.
 
-**Cursor do sistema visível** — durante o gameplay um FPS esconde o cursor e usa
-raw input; ao abrir um menu, mostra. É o sinal direto de que há menu aberto.
-Depende do jogo não desenhar cursor próprio, então vem com interruptor: abra um
-menu e veja se o indicador acende no painel. Se não acender, desligue a opção e
-use `HOME`/`F2` manualmente.
+**Cursor preso no centro** — durante o gameplay o Battlefield V recentraliza o
+cursor do sistema no centro da janela a cada quadro, porque a mira vem de raw
+input. No menu ele solta o cursor. Medido nos dois estados: distância 0 px do
+centro jogando, mais de 100 px no menu.
+
+É o que impede a compensação de arrastar o ponteiro enquanto você clica na
+interface do jogo. A decisão tem histerese de 250 ms, para que o próprio
+movimento enviado pela ferramenta não seja lido como menu.
+
+> A heurística anterior — suspender enquanto o cursor do sistema estiver
+> visível — **não funciona no Battlefield V**, que mantém o cursor visível
+> também durante o gameplay. Continua disponível para outros jogos, desligada
+> por padrão. Ligá-la aqui bloqueia a compensação permanentemente.
 
 ## Configuração
 

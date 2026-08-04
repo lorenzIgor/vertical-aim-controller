@@ -169,9 +169,11 @@ bool DrawInteractivePanel(Settings& settings) {
                                "%s %s", value ? "[x]" : "[ ]", name);
         };
         flag("jogo em primeiro plano", ctx.gameForeground);
+        flag("cursor preso no centro (gameplay)", ctx.cursorPinned);
         flag("cursor do sistema visivel", ctx.cursorVisible);
         flag("suspenso por HOME/F2", ctx.suppressedByKey);
         flag("compensando agora", ctx.compensating);
+        ImGui::TextDisabled("Estado: %s", input::StatusLabel(ctx.status));
 
         ImGui::SeparatorText("Deteccao");
 
@@ -181,15 +183,24 @@ bool DrawInteractivePanel(Settings& settings) {
             changed = true;
         }
 
+        bool requirePinned = input::RequireCursorPinned();
+        if (ImGui::Checkbox("Compensar so com o cursor preso no centro", &requirePinned)) {
+            input::SetRequireCursorPinned(requirePinned);
+            changed = true;
+        }
+        ImGui::TextDisabled(
+            "O BF5 prende o cursor no centro durante o gameplay e solta no\n"
+            "menu. E o que impede a compensacao de arrastar o ponteiro\n"
+            "enquanto voce clica na interface do jogo.");
+
         bool suppressCursor = input::SuppressWhenCursorVisible();
-        if (ImGui::Checkbox("Suspender com cursor visivel", &suppressCursor)) {
+        if (ImGui::Checkbox("Suspender com cursor visivel (obsoleta)", &suppressCursor)) {
             input::SetSuppressWhenCursorVisible(suppressCursor);
             changed = true;
         }
         ImGui::TextDisabled(
-            "Desligada por padrao. So ligue depois de confirmar acima que\n"
-            "o indicador de cursor APAGA durante o gameplay. Se ele ficar\n"
-            "aceso o tempo todo, esta opcao bloqueia tudo -- use HOME/F2.");
+            "Nao serve para o BF5, que mantem o cursor visivel tambem\n"
+            "durante o gameplay. Ligar isto bloqueia tudo.");
 
         ImGui::SeparatorText("Aparencia");
         if (ImGui::SliderFloat("Tamanho do HUD", &settings.hudFontSize, 16.0f, 96.0f, "%.0f")) {

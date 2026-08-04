@@ -17,21 +17,24 @@ struct Settings {
 
     bool requireForeground = true;
 
-    // Desligada por padrao. A heuristica depende de o jogo esconder o cursor do
-    // sistema durante o gameplay, e quando isso nao acontece ela bloqueia a
-    // compensacao o tempo todo -- falha silenciosa que parece defeito. Ligue
-    // apenas depois de confirmar no painel que o indicador de cursor apaga
-    // durante o jogo.
+    // Compensa apenas enquanto o jogo prende o cursor no centro da janela --
+    // o que o Battlefield V faz no gameplay e nao faz no menu.
+    bool requireCursorPinned = true;
+
+    // Heuristica anterior, desligada por padrao: nao serve para o Battlefield
+    // V, que mantem o cursor do sistema visivel tambem durante o gameplay.
+    // Quando o jogo se comporta assim, ela bloqueia a compensacao o tempo todo.
     bool suppressWhenCursorVisible = false;
 
     // px/s por slot de arma. O slot 1 e a primaria; os demais comecam em zero
     // porque pistola e gadget normalmente nao precisam de compensacao.
-    std::array<float, kSlotCountCfg> ratePerSlot = {250.0f, 0.0f, 0.0f, 0.0f};
+    // 135 veio de calibracao real no Battlefield V, nao de estimativa.
+    std::array<float, kSlotCountCfg> ratePerSlot = {135.0f, 0.0f, 0.0f, 0.0f};
 
     float stepFine   = 5.0f;   // F11 / F12
-    float stepCoarse = 50.0f;  // F9  / F10
-    float presetF7   = 250.0f;
-    float presetF8   = 620.0f;
+    float stepCoarse = 25.0f;  // F9  / F10
+    float presetF7   = 135.0f;
+    float presetF8   = 335.0f;
 
     float hudFontSize = 42.0f;
 };
