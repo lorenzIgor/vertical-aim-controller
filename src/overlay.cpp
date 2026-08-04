@@ -13,6 +13,9 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"VerticalAimControllerOverlay";
 constexpr wchar_t kWindowTitle[] = L"VerticalAimController";
 
+// Estado lido pela WndProc, que e estatica. Ha exatamente um overlay por
+// processo, entao um estado de arquivo resolve sem exigir GWLP_USERDATA.
+bool g_clickThrough = true;
 }  // namespace
 
 Overlay::~Overlay() {
@@ -30,6 +33,17 @@ LRESULT CALLBACK Overlay::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
         // porque a posicao do mouse e injetada em FeedMouseFromSystem.
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;
+
+        // Click-through explicito, em conjunto com WS_EX_TRANSPARENT.
+        //
+        // HTTRANSPARENT manda o Windows repassar o teste para a janela de
+        // baixo. E redundante com WS_EX_TRANSPARENT no caso comum, mas nao
+        // depende de a janela ser WS_EX_LAYERED -- e esta nao pode ser, porque
+        // a transparencia por pixel vem do DirectComposition, que exige
+        // WS_EX_NOREDIRECTIONBITMAP.
+        case WM_NCHITTEST:
+            if (g_clickThrough) return HTTRANSPARENT;
+            break;
         default:
             break;
     }
@@ -225,26 +239,17 @@ void Overlay::Show(bool visible) {
     ShowWindow(hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
 }
 
-// Liga e desliga apenas WS_EX_TRANSPARENT, e so quando muda de fato.
+// Alterna a resposta de WM_NCHITTEST. Nao mexe em WS_EX_TRANSPARENT: nesta
+// janela aquele estilo nao produz click-through, porque ela nao e -- e nao pode
+// ser -- WS_EX_LAYERED. Ver o comentario em WM_NCHITTEST.
 //
 // WS_EX_NOACTIVATE fica permanentemente ligado: o overlay jamais deve roubar
-// ativacao do jogo. Nao ha mais um "modo interativo" que capture a tela toda --
-// a captura dura apenas os quadros em que o cursor esta sobre o painel.
+// ativacao do jogo. Nao ha um "modo interativo" que capture a tela toda -- a
+// captura dura apenas os quadros em que o cursor esta sobre o painel.
 void Overlay::SetClickThrough(bool clickThrough) {
     if (clickThrough == clickThrough_) return;
-    clickThrough_ = clickThrough;
-
-    LONG_PTR ex = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
-    if (clickThrough) {
-        ex |= WS_EX_TRANSPARENT;
-    } else {
-        ex &= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
-    }
-    SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, ex);
-
-    // Mudanca de estilo so tem efeito apos SWP_FRAMECHANGED.
-    SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    clickThrough_  = clickThrough;
+    g_clickThrough = clickThrough;
 }
 
 // Injeta mouse direto do sistema.
