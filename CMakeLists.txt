@@ -51,6 +51,7 @@ add_executable(vertical-aim-controller WIN32
     src/overlay.cpp
     src/gamewindow.cpp
     src/input.cpp
+    src/config.cpp
 )
 
 target_link_libraries(vertical-aim-controller PRIVATE

@@ -13,11 +13,17 @@ namespace {
 // ---------------------------------------------------------------------------
 // Estado compartilhado com a thread de render (somente leitura la).
 // ---------------------------------------------------------------------------
-std::atomic<bool>  g_running{false};
-std::atomic<bool>  g_enabled{false};
-std::atomic<bool>  g_isActive{false};
-std::atomic<float> g_rate{kPresetF7};
-std::atomic<int>   g_currentSlot{0};
+std::atomic<bool> g_running{false};
+std::atomic<bool> g_enabled{false};
+std::atomic<bool> g_isActive{false};
+std::atomic<int>  g_currentSlot{0};
+
+std::atomic<float> g_ratePerSlot[kSlotCount];
+
+std::atomic<float> g_stepFine{5.0f};
+std::atomic<float> g_stepCoarse{50.0f};
+std::atomic<float> g_presetF7{250.0f};
+std::atomic<float> g_presetF8{620.0f};
 
 std::atomic<HWND> g_gameWindow{nullptr};
 std::atomic<HWND> g_overlayWindow{nullptr};
@@ -31,6 +37,10 @@ std::atomic<bool> g_ctxSuppressedByKey{false};
 std::atomic<bool> g_ctxCompensating{false};
 
 std::thread g_thread;
+
+int ClampSlot(int slot) {
+    return std::clamp(slot, 0, kSlotCount - 1);
+}
 
 // ---------------------------------------------------------------------------
 // Deteccao de borda
@@ -63,8 +73,15 @@ bool Edge(bool condition, bool& wasDown) {
     return edge;
 }
 
-void AdjustRate(float delta) {
-    g_rate.store(std::clamp(g_rate.load() + delta, kRateMin, kRateMax));
+void AdjustCurrentRate(float delta) {
+    const int slot = ClampSlot(g_currentSlot.load());
+    g_ratePerSlot[slot].store(
+        std::clamp(g_ratePerSlot[slot].load() + delta, kRateMin, kRateMax));
+}
+
+void SetCurrentRate(float rate) {
+    const int slot = ClampSlot(g_currentSlot.load());
+    g_ratePerSlot[slot].store(std::clamp(rate, kRateMin, kRateMax));
 }
 
 void MoveMouseRelative(int dy) {
@@ -119,8 +136,10 @@ void ThreadMain() {
     // ficava obsoleto assim que o usuario usasse o toggle manual -- estando na
     // arma 1 e ligando com Ctrl+Shift+S, apertar 1 de novo desligava sem pedir,
     // porque restaurava um estado capturado antes do toggle.
+    //
+    // Nao e persistido: comecar com a compensacao ligada sem o usuario ter
+    // pedido seria uma surpresa ruim.
     bool activePerSlot[kSlotCount] = {};
-    int  currentSlot = 0;
 
     // Fracao de pixel que sobrou do tick anterior. Sem isto, uma taxa de
     // 250 px/s com tick de 1 ms daria 0,25 px por tick, truncaria para zero e
@@ -154,7 +173,6 @@ void ThreadMain() {
             // --- troca de arma ---
             for (int i = 0; i < kSlotCount; ++i) {
                 if (Edge(kSlot[i])) {
-                    currentSlot = i;
                     g_currentSlot.store(i);
                     g_isActive.store(activePerSlot[i]);
                 }
@@ -163,18 +181,19 @@ void ThreadMain() {
             // --- toggle geral: Ctrl+Shift+S, aplicado ao slot atual ---
             const bool toggleCombo = Down(VK_CONTROL) && Down(VK_SHIFT) && Down('S');
             if (Edge(toggleCombo, toggleWasDown)) {
-                activePerSlot[currentSlot] = !activePerSlot[currentSlot];
-                g_isActive.store(activePerSlot[currentSlot]);
+                const int slot = ClampSlot(g_currentSlot.load());
+                activePerSlot[slot] = !activePerSlot[slot];
+                g_isActive.store(activePerSlot[slot]);
             }
 
-            // --- ajuste da taxa ---
+            // --- ajuste da taxa do slot atual ---
             if (g_isActive.load()) {
-                if (Edge(kF12)) AdjustRate(+kStepFine);
-                if (Edge(kF11)) AdjustRate(-kStepFine);
-                if (Edge(kF10)) AdjustRate(+kStepCoarse);
-                if (Edge(kF9))  AdjustRate(-kStepCoarse);
-                if (Edge(kF8))  g_rate.store(kPresetF8);
-                if (Edge(kF7))  g_rate.store(kPresetF7);
+                if (Edge(kF12)) AdjustCurrentRate(+g_stepFine.load());
+                if (Edge(kF11)) AdjustCurrentRate(-g_stepFine.load());
+                if (Edge(kF10)) AdjustCurrentRate(+g_stepCoarse.load());
+                if (Edge(kF9))  AdjustCurrentRate(-g_stepCoarse.load());
+                if (Edge(kF8))  SetCurrentRate(g_presetF8.load());
+                if (Edge(kF7))  SetCurrentRate(g_presetF7.load());
             }
         } else {
             // Fora de contexto: consome as bordas para que voltar ao jogo com
@@ -196,7 +215,8 @@ void ThreadMain() {
         g_ctxCompensating.store(compensate);
 
         if (compensate) {
-            residual += static_cast<double>(g_rate.load()) * dt;
+            const int slot = ClampSlot(g_currentSlot.load());
+            residual += static_cast<double>(g_ratePerSlot[slot].load()) * dt;
 
             const double whole = std::trunc(residual);
             residual -= whole;
@@ -216,9 +236,16 @@ void ThreadMain() {
 
 }  // namespace
 
-bool  IsActive()    { return g_isActive.load(); }
-float Rate()        { return g_rate.load(); }
-int   CurrentSlot() { return g_currentSlot.load(); }
+bool IsActive()    { return g_isActive.load(); }
+int  CurrentSlot() { return ClampSlot(g_currentSlot.load()); }
+
+float Rate() { return g_ratePerSlot[ClampSlot(g_currentSlot.load())].load(); }
+
+float RateForSlot(int slot) { return g_ratePerSlot[ClampSlot(slot)].load(); }
+
+void SetRateForSlot(int slot, float rate) {
+    g_ratePerSlot[ClampSlot(slot)].store(std::clamp(rate, kRateMin, kRateMax));
+}
 
 ContextState Context() {
     ContextState s;
@@ -229,14 +256,39 @@ ContextState Context() {
     return s;
 }
 
-void SetEnabled(bool enabled)       { g_enabled.store(enabled); }
-void SetGameWindow(HWND hwnd)       { g_gameWindow.store(hwnd); }
-void SetOverlayWindow(HWND hwnd)    { g_overlayWindow.store(hwnd); }
+void SetEnabled(bool enabled)    { g_enabled.store(enabled); }
+void SetGameWindow(HWND hwnd)    { g_gameWindow.store(hwnd); }
+void SetOverlayWindow(HWND hwnd) { g_overlayWindow.store(hwnd); }
 
 void SetRequireForeground(bool value)         { g_requireForeground.store(value); }
 bool RequireForeground()                      { return g_requireForeground.load(); }
 void SetSuppressWhenCursorVisible(bool value) { g_suppressWhenCursorVisible.store(value); }
 bool SuppressWhenCursorVisible()              { return g_suppressWhenCursorVisible.load(); }
+
+void ApplySettings(const Settings& settings) {
+    for (int i = 0; i < kSlotCount; ++i) {
+        g_ratePerSlot[i].store(
+            std::clamp(settings.ratePerSlot[static_cast<size_t>(i)], kRateMin, kRateMax));
+    }
+    g_stepFine.store(settings.stepFine);
+    g_stepCoarse.store(settings.stepCoarse);
+    g_presetF7.store(settings.presetF7);
+    g_presetF8.store(settings.presetF8);
+    g_requireForeground.store(settings.requireForeground);
+    g_suppressWhenCursorVisible.store(settings.suppressWhenCursorVisible);
+}
+
+void ReadInto(Settings& settings) {
+    for (int i = 0; i < kSlotCount; ++i) {
+        settings.ratePerSlot[static_cast<size_t>(i)] = g_ratePerSlot[i].load();
+    }
+    settings.stepFine                  = g_stepFine.load();
+    settings.stepCoarse                = g_stepCoarse.load();
+    settings.presetF7                  = g_presetF7.load();
+    settings.presetF8                  = g_presetF8.load();
+    settings.requireForeground         = g_requireForeground.load();
+    settings.suppressWhenCursorVisible = g_suppressWhenCursorVisible.load();
+}
 
 void Start() {
     if (g_running.load()) return;

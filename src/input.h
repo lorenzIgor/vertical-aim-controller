@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include "config.h"
+
 // Compensacao de recuo e hotkeys.
 //
 // Roda em thread propria, com cadencia medida por QueryPerformanceCounter. A
@@ -11,32 +13,28 @@
 // iteracao, e a iteracao durava o que o render demorasse.
 namespace input {
 
-// Taxas iniciais, em px/s. Substituem os antigos 121 e 301, que estavam em
-// "unidades absolutas normalizadas por iteracao" e nao tem conversao para ca.
-// Preservam a proporcao entre as duas armas; os valores exatos precisam de uma
-// calibracao unica.
-inline constexpr float kPresetF7 = 250.0f;
-inline constexpr float kPresetF8 = 620.0f;
-
-inline constexpr float kStepFine   = 5.0f;   // F11 / F12
-inline constexpr float kStepCoarse = 50.0f;  // F9  / F10
+inline constexpr int kSlotCount = kSlotCountCfg;
 
 inline constexpr float kRateMin = 0.0f;
 inline constexpr float kRateMax = 5000.0f;
 
-inline constexpr int kSlotCount = 4;
-
 // Por que a compensacao esta parada num dado instante. Alimenta o painel: e
 // como se descobre, por exemplo, se a heuristica do cursor funciona no jogo.
 struct ContextState {
-    bool gameForeground   = false;
-    bool cursorVisible    = false;
-    bool suppressedByKey  = false;  // HOME ou F2 segurados
-    bool compensating     = false;
+    bool gameForeground  = false;
+    bool cursorVisible   = false;
+    bool suppressedByKey = false;  // HOME ou F2 segurados
+    bool compensating    = false;
 };
 
 void Start();
 void Stop();
+
+// Carrega taxas, passos e presets vindos do arquivo de configuracao.
+void ApplySettings(const Settings& settings);
+
+// Copia o estado corrente de volta para a struct, para gravacao.
+void ReadInto(Settings& settings);
 
 // Janelas que contam como "estou no contexto certo". A do overlay entra na
 // conta porque, com o painel aberto, o foco e dele e nao do jogo.
@@ -62,9 +60,15 @@ bool RequireForeground();
 void SetSuppressWhenCursorVisible(bool value);
 bool SuppressWhenCursorVisible();
 
-bool         IsActive();
-float        Rate();
-int          CurrentSlot();  // 0..kSlotCount-1
+bool IsActive();
+int  CurrentSlot();  // 0..kSlotCount-1
+
+// Taxa do slot atualmente selecionado.
+float Rate();
+
+float RateForSlot(int slot);
+void  SetRateForSlot(int slot, float rate);
+
 ContextState Context();
 
 }  // namespace input
