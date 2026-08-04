@@ -1,5 +1,7 @@
 #include <windows.h>
 #include <cstdio>
+#include <cwchar>
+#include <string>
 
 #include "imgui.h"
 
@@ -7,8 +9,11 @@
 #include "gamewindow.h"
 #include "input.h"
 #include "overlay.h"
+#include "tray.h"
 
 namespace {
+
+constexpr wchar_t kInstanceMutex[] = L"Local\\VerticalAimController.SingleInstance";
 
 // Carencia antes de encerrar quando a janela do jogo some. Evita fechar por
 // uma oscilacao momentanea (troca de resolucao, alt-tab pesado).
@@ -40,6 +45,22 @@ bool TunablesEqual(const Settings& a, const Settings& b) {
            a.presetF7 == b.presetF7 && a.presetF8 == b.presetF8 &&
            a.requireForeground == b.requireForeground &&
            a.suppressWhenCursorVisible == b.suppressWhenCursorVisible;
+}
+
+std::wstring BuildTooltip(bool gameFound) {
+    if (!gameFound) {
+        return L"Vertical Aim Controller\nAguardando o Battlefield V";
+    }
+
+    wchar_t buffer[128];
+    if (input::IsActive()) {
+        std::swprintf(buffer, 128, L"Vertical Aim Controller\nSlot %d: %.0f px/s",
+                      input::CurrentSlot() + 1, input::Rate());
+    } else {
+        std::swprintf(buffer, 128, L"Vertical Aim Controller\nSlot %d: desligado",
+                      input::CurrentSlot() + 1);
+    }
+    return buffer;
 }
 
 void DrawPassiveHud(float fontSize) {
@@ -149,6 +170,24 @@ bool DrawInteractivePanel(Settings& settings) {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
+    // Instancia unica.
+    //
+    // Duas copias rodando enviariam SendInput em paralelo e a compensacao
+    // sairia dobrada -- um erro que se manifesta como calibracao errada, sem
+    // pista alguma da causa real. E facil chegar nisso: como o programa fica
+    // invisivel ate o jogo abrir, clicar no atalho de novo e a reacao natural.
+    HANDLE instanceLock = CreateMutexW(nullptr, TRUE, kInstanceMutex);
+    if (instanceLock == nullptr || GetLastError() == ERROR_ALREADY_EXISTS) {
+        MessageBoxW(nullptr,
+                    L"O Vertical Aim Controller ja esta em execucao.\n\n"
+                    L"O icone fica na bandeja do sistema, ao lado do relogio "
+                    L"(pode estar escondido na setinha). Clique nele com o "
+                    L"botao direito para abrir o painel ou sair.",
+                    L"Vertical Aim Controller", MB_ICONINFORMATION | MB_OK);
+        if (instanceLock != nullptr) CloseHandle(instanceLock);
+        return 0;
+    }
+
     // Sem isto o Windows escala as coordenadas da janela quando ha monitor com
     // DPI diferente de 100%, e o overlay fica deslocado do jogo.
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -161,8 +200,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         MessageBoxW(nullptr,
                     L"Falha ao inicializar o overlay (D3D11 / DirectComposition).",
                     L"vertical-aim-controller", MB_ICONERROR | MB_OK);
+        CloseHandle(instanceLock);
         return 1;
     }
+
+    // Unico sinal de que o programa esta vivo enquanto o jogo nao abre, e
+    // unica forma de encerrar pela interface: o overlay fica oculto e
+    // WS_EX_TOOLWINDOW o mantem fora da barra de tarefas e do Alt-Tab.
+    tray::Init(hInstance);
+    tray::Notify(L"Vertical Aim Controller",
+                 L"Rodando. O overlay aparece quando o Battlefield V abrir.");
 
     GameWindowTracker tracker(config::Widen(settings.targetExe),
                               config::Widen(settings.titleFallback));
@@ -194,9 +241,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         input::SetGameWindow(tracker.Hwnd());
         input::SetEnabled(tracker.Valid());
 
+        switch (tray::PollCommand()) {
+            case tray::Command::TogglePanel:
+                overlay.SetInteractive(!overlay.IsInteractive());
+                break;
+            case tray::Command::Quit:
+                running = false;
+                break;
+            case tray::Command::None:
+                break;
+        }
+        if (!running) break;
+
         if (KeyEdge(VK_INSERT, insertWasDown)) {
             overlay.SetInteractive(!overlay.IsInteractive());
         }
+
+        tray::SetTooltip(BuildTooltip(tracker.Valid()));
 
         // Gravacao com atraso, comparando o estado vivo com o ultimo gravado.
         // Pega tanto mudancas do painel quanto das hotkeys.
@@ -247,6 +308,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     input::ReadInto(settings);
     config::Save(settings);
 
+    tray::Shutdown();
     overlay.Shutdown();
+    CloseHandle(instanceLock);
     return 0;
 }

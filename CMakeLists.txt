@@ -52,6 +52,7 @@ add_executable(vertical-aim-controller WIN32
     src/gamewindow.cpp
     src/input.cpp
     src/config.cpp
+    src/tray.cpp
     src/app.rc      # icone e informacoes de versao
 )
 
@@ -61,6 +62,7 @@ target_link_libraries(vertical-aim-controller PRIVATE
     dxgi       # swapchain de composicao
     dcomp      # DirectComposition: transparencia por pixel
     winmm      # timeBeginPeriod (resolucao do timer, usado a partir da fase 2)
+    shell32    # Shell_NotifyIcon (icone na bandeja)
 )
 
 target_compile_definitions(vertical-aim-controller PRIVATE

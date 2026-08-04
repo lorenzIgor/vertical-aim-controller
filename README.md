@@ -41,6 +41,23 @@ fica ao lado do executável, rodar direto de `build/` faria a calibração ser
 apagada junto sempre que o diretório de build fosse limpo — `dist/` é um caminho
 estável para atalhos, atualizado a cada build.
 
+## Ícone na bandeja
+
+O programa não abre janela ao iniciar: o overlay só aparece quando o jogo é
+detectado, e ele fica fora da barra de tarefas e do Alt-Tab. O sinal de que está
+rodando é o **ícone na bandeja do sistema**, ao lado do relógio — pode estar
+escondido atrás da setinha de estouro.
+
+| Ação | Efeito |
+|---|---|
+| Clique esquerdo | Abre/fecha o painel (mesmo que `INSERT`) |
+| Clique direito | Menu com painel e **Sair** |
+| Passar o mouse | Mostra o estado: aguardando o jogo, ou slot e taxa atuais |
+
+**Sair pelo menu da bandeja é a forma correta de encerrar.** Só uma instância
+roda por vez: abrir de novo apenas avisa que já está em execução, porque duas
+cópias enviariam movimento de mouse em paralelo e a compensação sairia dobrada.
+
 ## Atalhos
 
 | Tecla | Ação |
