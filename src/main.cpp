@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <cfloat>
 #include <cstdio>
 #include <cwchar>
 #include <string>
@@ -88,6 +89,44 @@ void DrawPassiveHud(float fontSize) {
 
     dl->AddText(font, fontSize, ImVec2(12.0f, 32.0f), kShadow, rateLabel);
     dl->AddText(font, fontSize, ImVec2(10.0f, 30.0f), kAccent, rateLabel);
+
+    // Motivo pelo qual a compensacao esta parada.
+    //
+    // Sem esta linha, bloqueado e quebrado tem exatamente a mesma aparencia na
+    // tela, e a unica saida e adivinhar qual das seis condicoes falhou.
+    const input::Status status = input::Context().status;
+
+    ImU32 statusColor = kMuted;
+    switch (status) {
+        case input::Status::Compensating: statusColor = IM_COL32( 80, 230,  90, 235); break;
+        case input::Status::Ready:        statusColor = IM_COL32(200, 200, 200, 210); break;
+        default:                          statusColor = IM_COL32(255, 190,  60, 240); break;
+    }
+
+    const float y = 34.0f + fontSize;
+    dl->AddText(font, labelSize, ImVec2(12.0f, y + 2.0f), kShadow, input::StatusLabel(status));
+    dl->AddText(font, labelSize, ImVec2(10.0f, y), statusColor, input::StatusLabel(status));
+}
+
+// Moldura inequivoca no modo interativo: nele o overlay deixa de ser
+// click-through e os cliques param de chegar ao jogo. Sem sinal visual, isso
+// se manifesta como "o jogo travou o mouse".
+void DrawInteractiveFrame() {
+    ImDrawList*  dl   = ImGui::GetForegroundDrawList();
+    ImFont*      font = ImGui::GetFont();
+    const ImVec2 size = ImGui::GetIO().DisplaySize;
+
+    const ImU32 warn = IM_COL32(255, 190, 60, 230);
+    dl->AddRect(ImVec2(2.0f, 2.0f), ImVec2(size.x - 2.0f, size.y - 2.0f), warn, 0.0f, 0, 5.0f);
+
+    const char* text = "MODO INTERATIVO - os cliques nao passam para o jogo - INSERT para voltar";
+    const ImVec2 extent = font->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, text);
+    const ImVec2 pos(size.x * 0.5f - extent.x * 0.5f, 12.0f);
+
+    dl->AddRectFilled(ImVec2(pos.x - 12.0f, pos.y - 6.0f),
+                      ImVec2(pos.x + extent.x + 12.0f, pos.y + extent.y + 6.0f),
+                      IM_COL32(0, 0, 0, 170), 4.0f);
+    dl->AddText(font, 20.0f, pos, warn, text);
 }
 
 // Devolve true se algo foi alterado pelo usuario nesta passagem.
@@ -148,9 +187,9 @@ bool DrawInteractivePanel(Settings& settings) {
             changed = true;
         }
         ImGui::TextDisabled(
-            "Abra um menu do jogo e veja se o indicador de cursor visivel\n"
-            "acende. Se nao acender, o BF5 desenha cursor proprio e esta\n"
-            "opcao nao serve -- desligue e use HOME/F2.");
+            "Desligada por padrao. So ligue depois de confirmar acima que\n"
+            "o indicador de cursor APAGA durante o gameplay. Se ele ficar\n"
+            "aceso o tempo todo, esta opcao bloqueia tudo -- use HOME/F2.");
 
         ImGui::SeparatorText("Aparencia");
         if (ImGui::SliderFloat("Tamanho do HUD", &settings.hudFontSize, 16.0f, 96.0f, "%.0f")) {
@@ -300,7 +339,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
 
         if (!overlay.BeginFrame()) break;
         DrawPassiveHud(settings.hudFontSize);
-        if (overlay.IsInteractive()) DrawInteractivePanel(settings);
+        if (overlay.IsInteractive()) {
+            DrawInteractiveFrame();
+            DrawInteractivePanel(settings);
+        }
         overlay.EndFrame();
     }
 

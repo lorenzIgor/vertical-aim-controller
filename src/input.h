@@ -18,13 +18,28 @@ inline constexpr int kSlotCount = kSlotCountCfg;
 inline constexpr float kRateMin = 0.0f;
 inline constexpr float kRateMax = 5000.0f;
 
-// Por que a compensacao esta parada num dado instante. Alimenta o painel: e
-// como se descobre, por exemplo, se a heuristica do cursor funciona no jogo.
+// Por que a compensacao esta parada num dado instante.
+//
+// Sem isto, uma compensacao bloqueada e indistinguivel de uma compensacao
+// quebrada: nao ha nada na tela dizendo qual das seis condicoes falhou.
+enum class Status {
+    Compensating,    // atirando e compensando
+    Ready,           // tudo liberado, faltando so o gatilho
+    NoGame,          // janela do jogo nao encontrada
+    NotForeground,   // jogo fora do primeiro plano (camada 1)
+    CursorVisible,   // cursor do sistema visivel (camada 2)
+    SuppressedByKey, // HOME ou F2 segurados
+    Inactive,        // desligado neste slot (Ctrl+Shift+S)
+};
+
+const char* StatusLabel(Status status);
+
 struct ContextState {
-    bool gameForeground  = false;
-    bool cursorVisible   = false;
-    bool suppressedByKey = false;  // HOME ou F2 segurados
-    bool compensating    = false;
+    bool   gameForeground  = false;
+    bool   cursorVisible   = false;
+    bool   suppressedByKey = false;  // HOME ou F2 segurados
+    bool   compensating    = false;
+    Status status          = Status::NoGame;
 };
 
 void Start();

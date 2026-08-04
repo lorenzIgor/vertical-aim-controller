@@ -29,12 +29,13 @@ std::atomic<HWND> g_gameWindow{nullptr};
 std::atomic<HWND> g_overlayWindow{nullptr};
 
 std::atomic<bool> g_requireForeground{true};
-std::atomic<bool> g_suppressWhenCursorVisible{true};
+std::atomic<bool> g_suppressWhenCursorVisible{false};
 
-std::atomic<bool> g_ctxForeground{false};
-std::atomic<bool> g_ctxCursorVisible{false};
-std::atomic<bool> g_ctxSuppressedByKey{false};
-std::atomic<bool> g_ctxCompensating{false};
+std::atomic<bool>   g_ctxForeground{false};
+std::atomic<bool>   g_ctxCursorVisible{false};
+std::atomic<bool>   g_ctxSuppressedByKey{false};
+std::atomic<bool>   g_ctxCompensating{false};
+std::atomic<Status> g_ctxStatus{Status::NoGame};
 
 std::thread g_thread;
 
@@ -214,6 +215,18 @@ void ThreadMain() {
 
         g_ctxCompensating.store(compensate);
 
+        // Mesma ordem de precedencia da condicao acima, para que o rotulo
+        // exibido aponte a primeira condicao que realmente falhou.
+        Status status;
+        if (!g_enabled.load())          status = Status::NoGame;
+        else if (!contextOk)            status = Status::NotForeground;
+        else if (!g_isActive.load())    status = Status::Inactive;
+        else if (cursorBlocks)          status = Status::CursorVisible;
+        else if (keySuppressed)         status = Status::SuppressedByKey;
+        else if (compensate)            status = Status::Compensating;
+        else                            status = Status::Ready;
+        g_ctxStatus.store(status);
+
         if (compensate) {
             const int slot = ClampSlot(g_currentSlot.load());
             residual += static_cast<double>(g_ratePerSlot[slot].load()) * dt;
@@ -253,7 +266,21 @@ ContextState Context() {
     s.cursorVisible   = g_ctxCursorVisible.load();
     s.suppressedByKey = g_ctxSuppressedByKey.load();
     s.compensating    = g_ctxCompensating.load();
+    s.status          = g_ctxStatus.load();
     return s;
+}
+
+const char* StatusLabel(Status status) {
+    switch (status) {
+        case Status::Compensating:    return "COMPENSANDO";
+        case Status::Ready:           return "PRONTO";
+        case Status::NoGame:          return "SEM JOGO";
+        case Status::NotForeground:   return "BLOQUEADO: fora de foco";
+        case Status::CursorVisible:   return "BLOQUEADO: cursor visivel";
+        case Status::SuppressedByKey: return "SUSPENSO: HOME/F2";
+        case Status::Inactive:        return "DESLIGADO (Ctrl+Shift+S)";
+    }
+    return "?";
 }
 
 void SetEnabled(bool enabled)    { g_enabled.store(enabled); }

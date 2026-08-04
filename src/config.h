@@ -15,8 +15,14 @@ struct Settings {
     std::string targetExe     = "bfv.exe";
     std::string titleFallback = "battlefield";
 
-    bool requireForeground         = true;
-    bool suppressWhenCursorVisible = true;
+    bool requireForeground = true;
+
+    // Desligada por padrao. A heuristica depende de o jogo esconder o cursor do
+    // sistema durante o gameplay, e quando isso nao acontece ela bloqueia a
+    // compensacao o tempo todo -- falha silenciosa que parece defeito. Ligue
+    // apenas depois de confirmar no painel que o indicador de cursor apaga
+    // durante o jogo.
+    bool suppressWhenCursorVisible = false;
 
     // px/s por slot de arma. O slot 1 e a primaria; os demais comecam em zero
     // porque pistola e gadget normalmente nao precisam de compensacao.
