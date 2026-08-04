@@ -30,7 +30,7 @@ bool KeyEdge(int vk, bool& wasDown) {
 void DrawPassiveHud() {
     char label[32];
     if (input::IsActive()) {
-        std::snprintf(label, sizeof(label), "%d", input::Rate());
+        std::snprintf(label, sizeof(label), "%.0f", input::Rate());
     } else {
         std::snprintf(label, sizeof(label), "NONE");
     }
@@ -50,7 +50,7 @@ void DrawInteractivePanel() {
 
     if (ImGui::Begin("Vertical Aim Controller")) {
         ImGui::Text("Estado: %s", input::IsActive() ? "ATIVO" : "inativo");
-        ImGui::Text("Taxa:   %d", input::Rate());
+        ImGui::Text("Taxa:   %.0f px/s", input::Rate());
         ImGui::Separator();
         ImGui::TextWrapped(
             "Modo interativo. INSERT volta para o modo passivo, em que os "
@@ -78,6 +78,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
 
     GameWindowTracker tracker(kTargetExe, kTitleFallback);
 
+    // A compensacao roda em thread propria: precisa de cadencia estavel, e o
+    // laco de render e ritmado pelo vsync do monitor.
+    input::Start();
+
     bool      insertWasDown = false;
     bool      running       = true;
     ULONGLONG gameGoneSince = 0;
@@ -95,6 +99,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         if (!running) break;
 
         tracker.Update();
+        input::SetEnabled(tracker.Valid());
 
         if (KeyEdge(VK_INSERT, insertWasDown)) {
             overlay.SetInteractive(!overlay.IsInteractive());
@@ -114,8 +119,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
                 }
             }
 
-            // Sem jogo nao ha o que compensar, e sem janela visivel o Present
-            // nao serve de limitador -- dorme para nao girar em vazio.
+            // Sem janela visivel o Present nao serve de limitador -- dorme
+            // para nao girar em vazio.
             Sleep(16);
             continue;
         }
@@ -124,14 +129,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         overlay.SetGeometry(tracker.ClientRectInScreen());
         overlay.Show(true);
 
-        input::Tick();
-
         if (!overlay.BeginFrame()) break;
         DrawPassiveHud();
         if (overlay.IsInteractive()) DrawInteractivePanel();
         overlay.EndFrame();
     }
 
+    input::Stop();
     overlay.Shutdown();
     return 0;
 }

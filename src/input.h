@@ -2,20 +2,34 @@
 
 // Compensacao de recuo e hotkeys.
 //
-// ATENCAO: esta fase move o codigo de lugar sem mudar a logica. Os defeitos
-// conhecidos continuam presentes de proposito, para que o commit da migracao
-// de render nao se misture com mudanca de comportamento:
-//
-//   - mouse_event em modo absoluto, quando o correto e relativo
-//   - 'rate' aplicado por iteracao do laco, nao por unidade de tempo
-//   - GetKeyState onde deveria ser GetAsyncKeyState
-//
-// A fase 2 reescreve tudo isso.
+// Roda em thread propria, com cadencia medida por QueryPerformanceCounter. A
+// taxa e expressa em PIXELS POR SEGUNDO e o deslocamento de cada tick e
+// rate * dt, entao a compensacao independe da velocidade do laco de render --
+// que e o que a versao anterior nao tinha: ela somava um delta fixo por
+// iteracao, e a iteracao durava o que o render demorasse.
 namespace input {
 
-void Tick();
+// Taxas iniciais, em px/s. Substituem os antigos 121 e 301, que estavam em
+// "unidades absolutas normalizadas por iteracao" e nao tem conversao para ca.
+// Preservam a proporcao entre as duas armas; os valores exatos precisam de uma
+// calibracao unica.
+inline constexpr float kPresetF7 = 250.0f;
+inline constexpr float kPresetF8 = 620.0f;
 
-bool IsActive();
-int  Rate();
+inline constexpr float kStepFine   = 5.0f;   // F11 / F12
+inline constexpr float kStepCoarse = 50.0f;  // F9  / F10
+
+inline constexpr float kRateMin = 0.0f;
+inline constexpr float kRateMax = 5000.0f;
+
+void Start();
+void Stop();
+
+// Liga/desliga a compensacao de fora. main() usa isto para so compensar
+// enquanto a janela do jogo existe.
+void SetEnabled(bool enabled);
+
+bool  IsActive();
+float Rate();
 
 }  // namespace input
