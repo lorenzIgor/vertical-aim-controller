@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(vertical-aim-controller LANGUAGES CXX)
+project(vertical-aim-controller LANGUAGES CXX RC)
 
 if(NOT WIN32)
     message(FATAL_ERROR "Projeto especifico para Windows (Win32 + D3D11 + DirectComposition).")
@@ -52,6 +52,7 @@ add_executable(vertical-aim-controller WIN32
     src/gamewindow.cpp
     src/input.cpp
     src/config.cpp
+    src/app.rc      # icone e informacoes de versao
 )
 
 target_link_libraries(vertical-aim-controller PRIVATE
@@ -71,3 +72,20 @@ target_compile_definitions(vertical-aim-controller PRIVATE
 if(MSVC)
     target_compile_options(vertical-aim-controller PRIVATE /W4 /permissive-)
 endif()
+
+# ---------------------------------------------------------------------------
+# Copia para dist/
+#
+# vac.ini e gravado ao lado do executavel. Rodando direto de build/, apagar o
+# diretorio de build levaria junto a calibracao. dist/ fica fora da arvore de
+# build e e atualizado a cada compilacao, entao o atalho da area de trabalho
+# aponta para um caminho estavel sem ficar desatualizado.
+# ---------------------------------------------------------------------------
+add_custom_command(TARGET vertical-aim-controller POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/dist"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:vertical-aim-controller>"
+            "${CMAKE_SOURCE_DIR}/dist/"
+    COMMENT "Copiando executavel para dist/"
+    VERBATIM
+)

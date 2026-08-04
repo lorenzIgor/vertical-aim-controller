@@ -34,8 +34,12 @@ cmake --build build --config Release
 ```
 
 O Dear ImGui é baixado automaticamente pelo `FetchContent` na configuração, em
-tag fixa. O binário sai em `build/Release/vertical-aim-controller.exe` e não
-depende de nenhuma DLL além das do sistema.
+tag fixa. O binário não depende de nenhuma DLL além das do sistema.
+
+Ao final da compilação o executável é copiado para `dist/`. Como o `vac.ini`
+fica ao lado do executável, rodar direto de `build/` faria a calibração ser
+apagada junto sempre que o diretório de build fosse limpo — `dist/` é um caminho
+estável para atalhos, atualizado a cada build.
 
 ## Atalhos
 
