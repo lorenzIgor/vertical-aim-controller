@@ -24,8 +24,6 @@ constexpr ULONGLONG kGameGoneGraceMs = 3000;
 // sequencia, e nao ha motivo para escrever em disco a cada uma.
 constexpr ULONGLONG kSaveDebounceMs = 2000;
 
-// Tolerancia antes de abandonar o modo interativo por falta de foco.
-constexpr ULONGLONG kInteractiveFocusGraceMs = 1500;
 
 constexpr ImU32 kAccent = IM_COL32(255, 57, 57, 255);
 constexpr ImU32 kShadow = IM_COL32(0, 0, 0, 180);
@@ -111,18 +109,19 @@ void DrawPassiveHud(float fontSize) {
     dl->AddText(font, labelSize, ImVec2(10.0f, y), statusColor, input::StatusLabel(status));
 }
 
-// Moldura inequivoca no modo interativo: nele o overlay deixa de ser
-// click-through e os cliques param de chegar ao jogo. Sem sinal visual, isso
-// se manifesta como "o jogo travou o mouse".
+// Aviso de que o painel esta aberto.
+//
+// Nao ha moldura de tela cheia: fora do retangulo do painel os cliques
+// continuam indo para o jogo, entao marcar a tela toda daria a impressao
+// errada de que tudo esta capturado.
 void DrawInteractiveFrame() {
     ImDrawList*  dl   = ImGui::GetForegroundDrawList();
     ImFont*      font = ImGui::GetFont();
     const ImVec2 size = ImGui::GetIO().DisplaySize;
 
     const ImU32 warn = IM_COL32(255, 190, 60, 230);
-    dl->AddRect(ImVec2(2.0f, 2.0f), ImVec2(size.x - 2.0f, size.y - 2.0f), warn, 0.0f, 0, 5.0f);
 
-    const char* text = "MODO INTERATIVO - os cliques nao passam para o jogo - INSERT ou ESC para voltar";
+    const char* text = "PAINEL ABERTO - so o painel captura o mouse - INSERT ou ESC para fechar";
     const ImVec2 extent = font->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, text);
     const ImVec2 pos(size.x * 0.5f - extent.x * 0.5f, 12.0f);
 
@@ -282,7 +281,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     bool      running       = true;
     ULONGLONG gameGoneSince = 0;
     ULONGLONG dirtySince    = 0;
-    ULONGLONG interactiveUnfocusedSince = 0;
 
     while (running) {
         MSG msg;
@@ -299,7 +297,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         tracker.Update();
         input::SetGameWindow(tracker.Hwnd());
         input::SetEnabled(tracker.Valid());
-        overlay.SetFocusReturnWindow(tracker.Hwnd());
 
         // Reconstroi o atlas de fontes fora do par BeginFrame/EndFrame.
         if (settings.uiScale != overlay.UiScale()) {
@@ -329,21 +326,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         // tecla para sair e arriscado demais.
         if (KeyEdge(VK_ESCAPE, escapeWasDown) && overlay.IsInteractive()) {
             overlay.SetInteractive(false);
-        }
-
-        // Terceira saida, automatica: modo interativo sem foco e uma zona morta
-        // -- o clique nao chega ao jogo nem ao painel. Se a ativacao nao pegou,
-        // ou se o usuario trocou de janela, volta sozinho ao modo passivo em
-        // vez de deixar a tela inteira engolindo cliques.
-        if (overlay.IsInteractive() && GetForegroundWindow() != overlay.Hwnd()) {
-            if (interactiveUnfocusedSince == 0) {
-                interactiveUnfocusedSince = now;
-            } else if (now - interactiveUnfocusedSince > kInteractiveFocusGraceMs) {
-                overlay.SetInteractive(false);
-                interactiveUnfocusedSince = 0;
-            }
-        } else {
-            interactiveUnfocusedSince = 0;
         }
 
         tray::SetTooltip(BuildTooltip(tracker.Valid()));

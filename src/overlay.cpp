@@ -13,33 +13,6 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"VerticalAimControllerOverlay";
 constexpr wchar_t kWindowTitle[] = L"VerticalAimController";
 
-// A WndProc e estatica e precisa saber o modo atual para decidir se aceita
-// ativacao. Ha exatamente um overlay por processo, entao um estado de arquivo
-// resolve sem exigir GWLP_USERDATA.
-bool g_interactive = false;
-
-// O Windows recusa SetForegroundWindow vindo de um processo que nao recebeu o
-// ultimo evento de entrada -- exatamente o caso de um overlay. Anexar a fila de
-// entrada da thread que esta em primeiro plano contorna a restricao pelo tempo
-// da chamada.
-//
-// Sem isto a troca para o modo interativo falha silenciosamente e recria a
-// zona morta: sem WS_EX_TRANSPARENT o clique nao chega ao jogo, e sem foco o
-// backend Win32 do ImGui nao entrega a posicao do mouse ao painel.
-void ForceForeground(HWND hwnd) {
-    if (hwnd == nullptr || !IsWindow(hwnd)) return;
-
-    const HWND  foreground = GetForegroundWindow();
-    const DWORD otherThread = GetWindowThreadProcessId(foreground, nullptr);
-    const DWORD myThread    = GetCurrentThreadId();
-    const bool  attach      = (otherThread != 0 && otherThread != myThread);
-
-    if (attach) AttachThreadInput(otherThread, myThread, TRUE);
-    SetForegroundWindow(hwnd);
-    SetActiveWindow(hwnd);
-    SetFocus(hwnd);
-    if (attach) AttachThreadInput(otherThread, myThread, FALSE);
-}
 }  // namespace
 
 Overlay::~Overlay() {
@@ -53,10 +26,10 @@ LRESULT CALLBACK Overlay::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
-        // No modo passivo o overlay nunca deve roubar ativacao do jogo. No modo
-        // interativo precisa aceitar, senao o painel nao recebe cliques.
+        // O overlay nunca rouba ativacao do jogo. O painel funciona sem foco
+        // porque a posicao do mouse e injetada em FeedMouseFromSystem.
         case WM_MOUSEACTIVATE:
-            return g_interactive ? MA_ACTIVATE : MA_NOACTIVATE;
+            return MA_NOACTIVATE;
         default:
             break;
     }
@@ -252,38 +225,49 @@ void Overlay::Show(bool visible) {
     ShowWindow(hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
 }
 
-void Overlay::SetInteractive(bool interactive) {
-    interactive_  = interactive;
-    g_interactive = interactive;
-
-    // Le o estilo atual e altera so os bits desejados. A versao anterior
-    // chamava SetWindowLong com um valor literal, o que apagava WS_EX_TOPMOST.
-    //
-    // TRANSPARENT e NOACTIVATE saem e entram juntos: sem foco o ImGui nao
-    // recebe posicao do mouse, e sem TRANSPARENT o clique tambem nao chega ao
-    // jogo -- as duas coisas juntas produzem uma zona morta que engole tudo
-    // que estiver sob o overlay.
-    const LONG_PTR bits = WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+// Liga e desliga apenas WS_EX_TRANSPARENT, e so quando muda de fato.
+//
+// WS_EX_NOACTIVATE fica permanentemente ligado: o overlay jamais deve roubar
+// ativacao do jogo. Nao ha mais um "modo interativo" que capture a tela toda --
+// a captura dura apenas os quadros em que o cursor esta sobre o painel.
+void Overlay::SetClickThrough(bool clickThrough) {
+    if (clickThrough == clickThrough_) return;
+    clickThrough_ = clickThrough;
 
     LONG_PTR ex = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
-    if (interactive) {
-        ex &= ~bits;
+    if (clickThrough) {
+        ex |= WS_EX_TRANSPARENT;
     } else {
-        ex |= bits;
+        ex &= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
     }
     SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, ex);
 
     // Mudanca de estilo so tem efeito apos SWP_FRAMECHANGED.
     SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+}
 
-    if (interactive) {
-        ForceForeground(hwnd_);
-    } else if (focusReturn_ != nullptr && IsWindow(focusReturn_)) {
-        // Devolve o foco ao jogo; do contrario ele fica sem foco e a
-        // compensacao permanece bloqueada pela camada de primeiro plano.
-        ForceForeground(focusReturn_);
-    }
+// Injeta mouse direto do sistema.
+//
+// ImGui_ImplWin32_NewFrame so entrega posicao quando GetForegroundWindow() e
+// esta janela, e o overlay nunca esta em primeiro plano. Lendo do sistema o
+// painel funciona sem foco, o que dispensa toda a manobra de ativacao que a
+// versao anterior fazia -- e era ela que produzia a zona morta.
+void Overlay::FeedMouseFromSystem() {
+    if (!interactive_) return;
+
+    POINT p;
+    if (!GetCursorPos(&p)) return;
+    if (!ScreenToClient(hwnd_, &p)) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMousePosEvent(static_cast<float>(p.x), static_cast<float>(p.y));
+    io.AddMouseButtonEvent(0, (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+    io.AddMouseButtonEvent(1, (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0);
+}
+
+void Overlay::SetInteractive(bool interactive) {
+    interactive_ = interactive;
 
     if (imguiReady_) {
         ImGuiIO& io = ImGui::GetIO();
@@ -293,6 +277,10 @@ void Overlay::SetInteractive(bool interactive) {
             io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
         }
     }
+
+    // Fechando o painel, volta a ser click-through imediatamente em vez de
+    // esperar o proximo quadro decidir.
+    if (!interactive) SetClickThrough(true);
 }
 
 void Overlay::ApplyUiScale(float scale) {
@@ -341,12 +329,18 @@ bool Overlay::BeginFrame() {
 
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
+    FeedMouseFromSystem();  // depois do backend, para sobrepor o que ele nao deu
     ImGui::NewFrame();
     return true;
 }
 
 void Overlay::EndFrame() {
     ImGui::Render();
+
+    // Captura o mouse apenas enquanto o cursor estiver sobre algum elemento do
+    // painel. Fora dele o overlay continua click-through e o jogo recebe os
+    // cliques normalmente, mesmo com o painel aberto.
+    SetClickThrough(!(interactive_ && ImGui::GetIO().WantCaptureMouse));
 
     // Limpar com alfa zero e o que torna o fundo realmente transparente: o DWM
     // compoe o resultado premultiplicado por cima da tela.

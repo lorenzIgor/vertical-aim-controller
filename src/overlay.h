@@ -30,20 +30,19 @@ public:
 
     void Show(bool visible);
 
-    // Passivo: WS_EX_TRANSPARENT e WS_EX_NOACTIVATE ligados, cliques
-    // atravessam para o jogo e a janela nunca rouba foco.
-    // Interativo: ambos desligados e a janela vai a primeiro plano.
+    // Mostra ou esconde o painel de configuracao.
     //
-    // Os dois estilos precisam andar juntos. O backend Win32 do ImGui so
-    // alimenta a posicao do mouse quando GetForegroundWindow() e esta janela,
-    // e WS_EX_NOACTIVATE impede exatamente isso -- entao deixar so o
-    // TRANSPARENT sair cria uma zona morta: a janela para de deixar o clique
-    // passar para o jogo, mas o ImGui tambem nao o recebe.
+    // Nao existe "modo" que capture a tela inteira. A cada quadro o overlay
+    // pergunta ao ImGui, via WantCaptureMouse, se o cursor esta sobre algum
+    // elemento do painel, e so entao deixa de ser click-through -- e apenas
+    // enquanto durar. Fora do retangulo do painel os cliques continuam indo
+    // para o jogo mesmo com o painel aberto.
+    //
+    // A posicao do mouse e injetada manualmente em vez de vir do backend
+    // Win32, que so a fornece quando a janela esta em primeiro plano. Assim o
+    // overlay nunca precisa roubar foco do jogo.
     void SetInteractive(bool interactive);
     bool IsInteractive() const { return interactive_; }
-
-    // Janela para a qual devolver o foco ao sair do modo interativo.
-    void SetFocusReturnWindow(HWND hwnd) { focusReturn_ = hwnd; }
 
     // Escala da interface. Reconstroi o atlas de fontes, entao nao pode ser
     // chamada entre BeginFrame e EndFrame.
@@ -62,6 +61,9 @@ public:
 private:
     template <typename T>
     using ComPtr = Microsoft::WRL::ComPtr<T>;
+
+    void SetClickThrough(bool clickThrough);
+    void FeedMouseFromSystem();
 
     bool CreateHostWindow(HINSTANCE hInstance);
     bool CreateDeviceAndSwapChain();
@@ -90,9 +92,9 @@ private:
     int   height_      = 720;
     int   posX_        = 0;
     int   posY_        = 0;
-    bool  visible_     = false;
-    bool  interactive_ = false;
-    bool  imguiReady_  = false;
-    float uiScale_     = 1.0f;
-    HWND  focusReturn_ = nullptr;
+    bool  visible_      = false;
+    bool  interactive_  = false;
+    bool  clickThrough_ = true;
+    bool  imguiReady_   = false;
+    float uiScale_      = 1.0f;
 };
