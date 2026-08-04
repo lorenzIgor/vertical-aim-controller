@@ -28,6 +28,13 @@ constexpr ULONGLONG kSaveDebounceMs = 2000;
 // Somente para o rotulo do HUD; o valor real vive em wWinMain.
 bool g_inputDisabled = false;
 
+// Tamanho da janela do overlay. Ela cobre so o proprio conteudo: cobrindo a
+// area do jogo inteira, a sobreposicao impedia os cliques na interface dele.
+constexpr int kHudWidth      = 680;
+constexpr int kHudHeight     = 320;
+constexpr int kPanelWidth    = 460;   // multiplicado pela escala da interface
+constexpr int kPanelMaxHeight = 1100;
+
 constexpr ImU32 kAccent = IM_COL32(255, 57, 57, 255);
 constexpr ImU32 kShadow = IM_COL32(0, 0, 0, 180);
 constexpr ImU32 kMuted  = IM_COL32(210, 210, 210, 200);
@@ -127,28 +134,30 @@ void DrawPassiveHud(float fontSize) {
 // continuam indo para o jogo, entao marcar a tela toda daria a impressao
 // errada de que tudo esta capturado.
 void DrawInteractiveFrame() {
-    ImDrawList*  dl   = ImGui::GetForegroundDrawList();
-    ImFont*      font = ImGui::GetFont();
-    const ImVec2 size = ImGui::GetIO().DisplaySize;
+    ImDrawList* dl   = ImGui::GetForegroundDrawList();
+    ImFont*     font = ImGui::GetFont();
 
-    const ImU32 warn = IM_COL32(255, 190, 60, 230);
+    const ImU32   warn = IM_COL32(255, 190, 60, 230);
+    const char*   text = "PAINEL ABERTO - INSERT ou ESC fecha";
+    const float   size = 20.0f;
+    const ImVec2  pos(10.0f, 118.0f);
+    const ImVec2  extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
 
-    const char* text = "PAINEL ABERTO - so o painel captura o mouse - INSERT ou ESC para fechar";
-    const ImVec2 extent = font->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, text);
-    const ImVec2 pos(size.x * 0.5f - extent.x * 0.5f, 12.0f);
-
-    dl->AddRectFilled(ImVec2(pos.x - 12.0f, pos.y - 6.0f),
-                      ImVec2(pos.x + extent.x + 12.0f, pos.y + extent.y + 6.0f),
+    dl->AddRectFilled(ImVec2(pos.x - 6.0f, pos.y - 4.0f),
+                      ImVec2(pos.x + extent.x + 6.0f, pos.y + extent.y + 4.0f),
                       IM_COL32(0, 0, 0, 170), 4.0f);
-    dl->AddText(font, 20.0f, pos, warn, text);
+    dl->AddText(font, size, pos, warn, text);
 }
 
 // Devolve true se algo foi alterado pelo usuario nesta passagem.
 bool DrawInteractivePanel(Settings& settings, bool& quitRequested) {
     bool changed = false;
 
-    ImGui::SetNextWindowPos(ImVec2(10.0f, 110.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(380.0f, 0.0f), ImGuiCond_FirstUseEver);
+    // Fixa, e nao FirstUseEver: a janela do overlay agora e dimensionada para o
+    // painel, entao ele precisa caber nela em vez de guardar posicao propria.
+    ImGui::SetNextWindowPos(ImVec2(8.0f, 150.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(kPanelWidth * settings.uiScale - 16.0f, 0.0f),
+                             ImGuiCond_Always);
 
     if (ImGui::Begin("Vertical Aim Controller")) {
         const int current = input::CurrentSlot();
@@ -303,7 +312,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR lpCmdLine, int) {
 
     bool      insertWasDown = false;
     bool      escapeWasDown = false;
-    bool      homeWasDown   = false;
     bool      hudVisible    = true;
     bool      running       = true;
     ULONGLONG gameGoneSince = 0;
@@ -360,15 +368,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR lpCmdLine, int) {
             overlay.SetInteractive(!overlay.IsInteractive());
         }
 
-        // HOME esconde e mostra o HUD.
-        //
-        // Com o HUD escondido a janela do overlay e ocultada por inteiro, e nao
-        // apenas apagada: assim ela sai completamente do caminho, sem depender
-        // de click-through nem de qualquer outra propriedade da janela.
-        if (KeyEdge(VK_HOME, homeWasDown)) {
-            hudVisible = !hudVisible;
-            if (!hudVisible) overlay.SetInteractive(false);
-        }
+        // HOME esconde o HUD enquanto estiver pressionado, e o traz de volta ao
+        // soltar. Com ele escondido a janela do overlay e ocultada por inteiro,
+        // e nao apenas apagada: sai completamente do caminho, sem depender de
+        // click-through nem de nenhuma outra propriedade da janela.
+        const bool homeDown = (GetAsyncKeyState(VK_HOME) & 0x8000) != 0;
+        hudVisible = !homeDown;
+        if (homeDown && overlay.IsInteractive()) overlay.SetInteractive(false);
 
         // Segunda saida do modo interativo. Nele o overlay cobre a tela inteira
         // e o icone da bandeja fica inacessivel, entao depender de uma unica
@@ -428,7 +434,28 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR lpCmdLine, int) {
             continue;
         }
 
-        overlay.SetGeometry(tracker.ClientRectInScreen());
+        // A janela cobre apenas o que precisa desenhar, nao a area do jogo.
+        //
+        // Cobrindo os 1920x1080 inteiros, a simples presenca do overlay sobre a
+        // janela do jogo impedia os cliques na interface do Battlefield V --
+        // verificado escondendo o HUD, o que devolvia o clique na hora. Isso
+        // acontecia mesmo com WM_NCHITTEST devolvendo HTTRANSPARENT em todos os
+        // pontos, entao nao era o teste de acerto: era a sobreposicao em si.
+        //
+        // Limitando a janela ao canto, o resto da tela nunca tem uma janela
+        // estranha por cima e a questao deixa de existir.
+        const RECT game = tracker.ClientRectInScreen();
+        const int  gameH = game.bottom - game.top;
+
+        int width  = kHudWidth;
+        int height = kHudHeight;
+        if (overlay.IsInteractive()) {
+            width  = static_cast<int>(kPanelWidth * settings.uiScale);
+            height = (gameH < kPanelMaxHeight) ? gameH : kPanelMaxHeight;
+        }
+
+        const RECT wanted{game.left, game.top, game.left + width, game.top + height};
+        overlay.SetGeometry(wanted);
         overlay.Show(true);
 
         if (!overlay.BeginFrame()) break;
