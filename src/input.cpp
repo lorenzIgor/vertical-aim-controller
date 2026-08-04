@@ -198,7 +198,9 @@ void ThreadMain() {
         const bool foreground    = InGameContext();
         const bool cursorVisible = CursorIsVisible();
         const bool cursorPinned  = CursorPinnedToCenter();
-        const bool keySuppressed = Down(VK_HOME) || Down(VK_F2);
+        // Apenas F2: HOME passou a alternar a visibilidade do HUD, e uma tecla
+        // com duas funcoes so gera confusao sobre o que ela acabou de fazer.
+        const bool keySuppressed = Down(VK_F2);
 
         // Um quadro solto nao basta: o proprio movimento que enviamos tira o
         // cursor do centro por alguns milissegundos ate o jogo recentralizar.
@@ -330,7 +332,7 @@ const char* StatusLabel(Status status) {
         case Status::NotForeground:   return "BLOQUEADO: fora de foco";
         case Status::MenuDetected:    return "BLOQUEADO: menu do jogo";
         case Status::CursorVisible:   return "BLOQUEADO: cursor visivel";
-        case Status::SuppressedByKey: return "SUSPENSO: HOME/F2";
+        case Status::SuppressedByKey: return "SUSPENSO: F2";
         case Status::Inactive:        return "DESLIGADO (Ctrl+Shift+S)";
     }
     return "?";

@@ -52,7 +52,10 @@ bool TunablesEqual(const Settings& a, const Settings& b) {
            a.suppressWhenCursorVisible == b.suppressWhenCursorVisible;
 }
 
-std::wstring BuildTooltip(bool gameFound) {
+std::wstring BuildTooltip(bool gameFound, bool hudVisible) {
+    if (!hudVisible) {
+        return L"Vertical Aim Controller\nHUD oculto (HOME mostra)";
+    }
     if (!gameFound) {
         return L"Vertical Aim Controller\nAguardando o Battlefield V";
     }
@@ -300,6 +303,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR lpCmdLine, int) {
 
     bool      insertWasDown = false;
     bool      escapeWasDown = false;
+    bool      homeWasDown   = false;
+    bool      hudVisible    = true;
     bool      running       = true;
     ULONGLONG gameGoneSince = 0;
     ULONGLONG dirtySince    = 0;
@@ -355,6 +360,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR lpCmdLine, int) {
             overlay.SetInteractive(!overlay.IsInteractive());
         }
 
+        // HOME esconde e mostra o HUD.
+        //
+        // Com o HUD escondido a janela do overlay e ocultada por inteiro, e nao
+        // apenas apagada: assim ela sai completamente do caminho, sem depender
+        // de click-through nem de qualquer outra propriedade da janela.
+        if (KeyEdge(VK_HOME, homeWasDown)) {
+            hudVisible = !hudVisible;
+            if (!hudVisible) overlay.SetInteractive(false);
+        }
+
         // Segunda saida do modo interativo. Nele o overlay cobre a tela inteira
         // e o icone da bandeja fica inacessivel, entao depender de uma unica
         // tecla para sair e arriscado demais.
@@ -362,7 +377,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR lpCmdLine, int) {
             overlay.SetInteractive(false);
         }
 
-        tray::SetTooltip(BuildTooltip(tracker.Valid()));
+        tray::SetTooltip(BuildTooltip(tracker.Valid(), hudVisible));
 
         // Gravacao com atraso, comparando o estado vivo com o ultimo gravado.
         // Pega tanto mudancas do painel quanto das hotkeys.
@@ -407,7 +422,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR lpCmdLine, int) {
         // existencia do jogo, alternar para outro aplicativo deixava o HUD
         // desenhado por cima dele -- uma camada vermelha sobre a tela inteira,
         // que nao passa de ruido fora do jogo e faz o overlay parecer travado.
-        if (GetForegroundWindow() != tracker.Hwnd()) {
+        if (!hudVisible || GetForegroundWindow() != tracker.Hwnd()) {
             overlay.Show(false);
             Sleep(16);
             continue;
