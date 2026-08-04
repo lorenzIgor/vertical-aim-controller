@@ -49,14 +49,43 @@ void DrawInteractivePanel() {
     ImGui::SetNextWindowSize(ImVec2(320.0f, 0.0f), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("Vertical Aim Controller")) {
+        ImGui::Text("Slot:   %d", input::CurrentSlot() + 1);
         ImGui::Text("Estado: %s", input::IsActive() ? "ATIVO" : "inativo");
         ImGui::Text("Taxa:   %.0f px/s", input::Rate());
+
+        ImGui::SeparatorText("Contexto");
+
+        const input::ContextState ctx = input::Context();
+        auto flag = [](const char* name, bool value) {
+            ImGui::TextColored(value ? ImVec4(0.35f, 0.85f, 0.35f, 1.0f)
+                                     : ImVec4(0.55f, 0.55f, 0.55f, 1.0f),
+                               "%s %s", value ? "[x]" : "[ ]", name);
+        };
+        flag("jogo em primeiro plano", ctx.gameForeground);
+        flag("cursor do sistema visivel", ctx.cursorVisible);
+        flag("suspenso por HOME/F2", ctx.suppressedByKey);
+        flag("compensando agora", ctx.compensating);
+
+        ImGui::SeparatorText("Deteccao");
+
+        bool requireFg = input::RequireForeground();
+        if (ImGui::Checkbox("Exigir jogo em primeiro plano", &requireFg)) {
+            input::SetRequireForeground(requireFg);
+        }
+
+        bool suppressCursor = input::SuppressWhenCursorVisible();
+        if (ImGui::Checkbox("Suspender com cursor visivel", &suppressCursor)) {
+            input::SetSuppressWhenCursorVisible(suppressCursor);
+        }
+        ImGui::TextDisabled(
+            "Abra um menu do jogo e veja se 'cursor do sistema visivel'\n"
+            "acende. Se nao acender, o BF5 desenha cursor proprio e esta\n"
+            "opcao nao serve -- desligue e use HOME/F2.");
+
         ImGui::Separator();
         ImGui::TextWrapped(
-            "Modo interativo. INSERT volta para o modo passivo, em que os "
-            "cliques atravessam o overlay.");
-        ImGui::Spacing();
-        ImGui::TextDisabled("Controles editaveis chegam na fase 4.");
+            "INSERT volta para o modo passivo, em que os cliques atravessam "
+            "o overlay.");
     }
     ImGui::End();
 }
@@ -80,6 +109,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
 
     // A compensacao roda em thread propria: precisa de cadencia estavel, e o
     // laco de render e ritmado pelo vsync do monitor.
+    input::SetOverlayWindow(overlay.Hwnd());
     input::Start();
 
     bool      insertWasDown = false;
@@ -99,6 +129,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         if (!running) break;
 
         tracker.Update();
+        input::SetGameWindow(tracker.Hwnd());
         input::SetEnabled(tracker.Valid());
 
         if (KeyEdge(VK_INSERT, insertWasDown)) {

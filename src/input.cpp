@@ -1,6 +1,5 @@
 #include "input.h"
 
-#include <windows.h>
 #include <timeapi.h>  // timeBeginPeriod: WIN32_LEAN_AND_MEAN exclui mmsystem.h
 
 #include <algorithm>
@@ -18,6 +17,18 @@ std::atomic<bool>  g_running{false};
 std::atomic<bool>  g_enabled{false};
 std::atomic<bool>  g_isActive{false};
 std::atomic<float> g_rate{kPresetF7};
+std::atomic<int>   g_currentSlot{0};
+
+std::atomic<HWND> g_gameWindow{nullptr};
+std::atomic<HWND> g_overlayWindow{nullptr};
+
+std::atomic<bool> g_requireForeground{true};
+std::atomic<bool> g_suppressWhenCursorVisible{true};
+
+std::atomic<bool> g_ctxForeground{false};
+std::atomic<bool> g_ctxCursorVisible{false};
+std::atomic<bool> g_ctxSuppressedByKey{false};
+std::atomic<bool> g_ctxCompensating{false};
 
 std::thread g_thread;
 
@@ -53,18 +64,32 @@ bool Edge(bool condition, bool& wasDown) {
 }
 
 void AdjustRate(float delta) {
-    const float updated = std::clamp(g_rate.load() + delta, kRateMin, kRateMax);
-    g_rate.store(updated);
+    g_rate.store(std::clamp(g_rate.load() + delta, kRateMin, kRateMax));
 }
 
 void MoveMouseRelative(int dy) {
     INPUT in = {};
-    in.type         = INPUT_MOUSE;
-    in.mi.dx        = 0;
-    in.mi.dy        = dy;
-    in.mi.dwFlags   = MOUSEEVENTF_MOVE;  // relativo: sem MOUSEEVENTF_ABSOLUTE
+    in.type           = INPUT_MOUSE;
+    in.mi.dx          = 0;
+    in.mi.dy          = dy;
+    in.mi.dwFlags     = MOUSEEVENTF_MOVE;  // relativo: sem MOUSEEVENTF_ABSOLUTE
     in.mi.dwExtraInfo = static_cast<ULONG_PTR>(GetMessageExtraInfo());
     SendInput(1, &in, sizeof(INPUT));
+}
+
+bool CursorIsVisible() {
+    CURSORINFO ci = {};
+    ci.cbSize = sizeof(ci);
+    if (!GetCursorInfo(&ci)) return false;
+    return (ci.flags & CURSOR_SHOWING) != 0;
+}
+
+// O overlay conta como contexto valido: com o painel aberto o foco e dele.
+bool InGameContext() {
+    const HWND fg      = GetForegroundWindow();
+    const HWND game    = g_gameWindow.load();
+    const HWND overlay = g_overlayWindow.load();
+    return fg != nullptr && (fg == game || fg == overlay);
 }
 
 // ---------------------------------------------------------------------------
@@ -83,13 +108,19 @@ void ThreadMain() {
 
     Hotkey kF12{VK_F12}, kF11{VK_F11}, kF10{VK_F10};
     Hotkey kF9{VK_F9},   kF8{VK_F8},   kF7{VK_F7};
+    Hotkey kSlot[kSlotCount] = {Hotkey{'1'}, Hotkey{'2'}, Hotkey{'3'}, Hotkey{'4'}};
 
-    bool toggleWasDown    = false;
-    bool extraGunsWasDown = false;
-    bool mainGunWasDown   = false;
+    bool toggleWasDown = false;
 
-    bool prevActiveState     = false;
-    bool canStorePrevState   = true;
+    // Estado por slot de arma.
+    //
+    // A versao anterior guardava um unico "estado anterior": as teclas 2/3/4
+    // salvavam o estado e desligavam, e a tecla 1 restaurava. O valor salvo
+    // ficava obsoleto assim que o usuario usasse o toggle manual -- estando na
+    // arma 1 e ligando com Ctrl+Shift+S, apertar 1 de novo desligava sem pedir,
+    // porque restaurava um estado capturado antes do toggle.
+    bool activePerSlot[kSlotCount] = {};
+    int  currentSlot = 0;
 
     // Fracao de pixel que sobrou do tick anterior. Sem isto, uma taxa de
     // 250 px/s com tick de 1 ms daria 0,25 px por tick, truncaria para zero e
@@ -107,45 +138,64 @@ void ThreadMain() {
         // daria um tranco. Melhor perder o deslocamento do periodo perdido.
         dt = std::min(dt, 0.05);
 
-        // --- toggle geral: Ctrl+Shift+S ---
-        const bool toggleCombo = Down(VK_CONTROL) && Down(VK_SHIFT) && Down('S');
-        if (Edge(toggleCombo, toggleWasDown)) {
-            g_isActive.store(!g_isActive.load());
-        }
+        const bool foreground    = InGameContext();
+        const bool cursorVisible = CursorIsVisible();
+        const bool keySuppressed = Down(VK_HOME) || Down(VK_F2);
 
-        // --- troca de arma ---
-        const bool extraGuns = Down('2') || Down('3') || Down('4');
-        if (Edge(extraGuns, extraGunsWasDown)) {
-            if (canStorePrevState) {
-                prevActiveState   = g_isActive.load();
-                canStorePrevState = false;
+        g_ctxForeground.store(foreground);
+        g_ctxCursorVisible.store(cursorVisible);
+        g_ctxSuppressedByKey.store(keySuppressed);
+
+        // Camada 1: fora do jogo, nem as hotkeys valem. Antes, digitar "2" em
+        // um chat ou navegador alterava o estado da ferramenta.
+        const bool contextOk = !g_requireForeground.load() || foreground;
+
+        if (g_enabled.load() && contextOk) {
+            // --- troca de arma ---
+            for (int i = 0; i < kSlotCount; ++i) {
+                if (Edge(kSlot[i])) {
+                    currentSlot = i;
+                    g_currentSlot.store(i);
+                    g_isActive.store(activePerSlot[i]);
+                }
             }
-            g_isActive.store(false);
-        }
-        if (Edge(Down('1'), mainGunWasDown)) {
-            g_isActive.store(prevActiveState);
-            canStorePrevState = true;
-        }
 
-        if (!g_enabled.load() || !g_isActive.load()) {
-            residual = 0.0;
-            Sleep(1);
-            continue;
-        }
+            // --- toggle geral: Ctrl+Shift+S, aplicado ao slot atual ---
+            const bool toggleCombo = Down(VK_CONTROL) && Down(VK_SHIFT) && Down('S');
+            if (Edge(toggleCombo, toggleWasDown)) {
+                activePerSlot[currentSlot] = !activePerSlot[currentSlot];
+                g_isActive.store(activePerSlot[currentSlot]);
+            }
 
-        // --- ajuste da taxa ---
-        if (Edge(kF12)) AdjustRate(+kStepFine);
-        if (Edge(kF11)) AdjustRate(-kStepFine);
-        if (Edge(kF10)) AdjustRate(+kStepCoarse);
-        if (Edge(kF9))  AdjustRate(-kStepCoarse);
-        if (Edge(kF8))  g_rate.store(kPresetF8);
-        if (Edge(kF7))  g_rate.store(kPresetF7);
+            // --- ajuste da taxa ---
+            if (g_isActive.load()) {
+                if (Edge(kF12)) AdjustRate(+kStepFine);
+                if (Edge(kF11)) AdjustRate(-kStepFine);
+                if (Edge(kF10)) AdjustRate(+kStepCoarse);
+                if (Edge(kF9))  AdjustRate(-kStepCoarse);
+                if (Edge(kF8))  g_rate.store(kPresetF8);
+                if (Edge(kF7))  g_rate.store(kPresetF7);
+            }
+        } else {
+            // Fora de contexto: consome as bordas para que voltar ao jogo com
+            // uma tecla ja segurada nao dispare uma acao acumulada.
+            for (auto& k : kSlot) Edge(k);
+            Edge(kF12); Edge(kF11); Edge(kF10);
+            Edge(kF9);  Edge(kF8);  Edge(kF7);
+            Edge(Down(VK_CONTROL) && Down(VK_SHIFT) && Down('S'), toggleWasDown);
+        }
 
         // --- compensacao ---
-        const bool firing    = Down(VK_LBUTTON);
-        const bool suppressed = Down(VK_HOME) || Down(VK_F2);
+        // Camada 2: cursor visivel indica menu aberto. Durante o gameplay um
+        // FPS esconde o cursor do sistema e usa raw input.
+        const bool cursorBlocks = g_suppressWhenCursorVisible.load() && cursorVisible;
 
-        if (firing && !suppressed) {
+        const bool compensate = g_enabled.load() && g_isActive.load() && contextOk &&
+                                !cursorBlocks && !keySuppressed && Down(VK_LBUTTON);
+
+        g_ctxCompensating.store(compensate);
+
+        if (compensate) {
             residual += static_cast<double>(g_rate.load()) * dt;
 
             const double whole = std::trunc(residual);
@@ -166,10 +216,27 @@ void ThreadMain() {
 
 }  // namespace
 
-bool  IsActive() { return g_isActive.load(); }
-float Rate()     { return g_rate.load(); }
+bool  IsActive()    { return g_isActive.load(); }
+float Rate()        { return g_rate.load(); }
+int   CurrentSlot() { return g_currentSlot.load(); }
 
-void SetEnabled(bool enabled) { g_enabled.store(enabled); }
+ContextState Context() {
+    ContextState s;
+    s.gameForeground  = g_ctxForeground.load();
+    s.cursorVisible   = g_ctxCursorVisible.load();
+    s.suppressedByKey = g_ctxSuppressedByKey.load();
+    s.compensating    = g_ctxCompensating.load();
+    return s;
+}
+
+void SetEnabled(bool enabled)       { g_enabled.store(enabled); }
+void SetGameWindow(HWND hwnd)       { g_gameWindow.store(hwnd); }
+void SetOverlayWindow(HWND hwnd)    { g_overlayWindow.store(hwnd); }
+
+void SetRequireForeground(bool value)         { g_requireForeground.store(value); }
+bool RequireForeground()                      { return g_requireForeground.load(); }
+void SetSuppressWhenCursorVisible(bool value) { g_suppressWhenCursorVisible.store(value); }
+bool SuppressWhenCursorVisible()              { return g_suppressWhenCursorVisible.load(); }
 
 void Start() {
     if (g_running.load()) return;
